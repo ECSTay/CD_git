@@ -568,13 +568,13 @@ There was no evidence the adjusted mean growth velocity differed significantly b
 ```{r Estimand_S8, echo=FALSE, message = FALSE, warning = FALSE}
 
 data_S8 <- data_elig %>%
-  filter(wk36_present == 1)  %>%
-  dplyr::select(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex.f, recr_hosp.factor) %>%
-  tidyr::drop_na(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex.f) %>%
+  #filter(wk36_present == 1)  %>%
+  dplyr::select(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   #dplyr::select(where(~ any(is.na(.)))) %>% #dth_yn has 2 NA values
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
 
-fit_S8 <- glm(BPD_any ~ rand_gp + multiple + ans.factor + ga_strata.f + sex.f +
+fit_S8 <- glm(BPD_any ~ rand_gp + multiple + ans.factor + ga_strata.f + sex +
                         Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
               data = data_S8, family = binomial(link = "logit"))
 
@@ -616,7 +616,7 @@ print(results_8)
 
 #don't adjust p-value
 ```
-The data for this estimand includes the randomised and eligible participants known to survive until 36.0 weeks PMA (N = 680). 3 participants were missing data for this outcome. 1 participant had withdrawn from the study after 36.0 weeks PMA and was excluded , leaving 677 included for analysis.
+The data for this estimand includes the randomised and eligible participants known to survive until 36.0 weeks PMA (N = 744). 36 participants were missing data for this outcome.34 had withdrawn without evidence of BPD, 1 participant had withdrawn from the study after 36.0 weeks PMA and was excluded , leaving 677 included for analysis.
 
 There was insufficient evidence to conclude a significant difference in the risk of any BPD between the control and the intervention groups (marginal adjusted risk ratio 0.86, 95% CI: 0.72 to 1.02; p-value = 0.091).
 
@@ -974,9 +974,11 @@ print(adjusted_p_values)
 # Tables for the big table
 ```{r big table, echo=FALSE, message = FALSE, warning = FALSE}
 
-big_table <- rbind(results_1,results_2,results_3,results_4,results_5, results_8, results_14, results_15, results_18)
+big_table <- rbind(results_1,results_2,results_3,results_4,results_5,results_6, results_7, results_8, results_14, results_15, results_18)
 
 print(big_table)
+
+###growth estimands - those who survive to 36w PMA
 
 data_36 <- data_elig %>%
   filter(wk36_present == 1) %>%
@@ -987,7 +989,7 @@ data_36 <- data_elig %>%
 
 summary_table_str1 <- data_36 %>%
    filter(ga_strata == 1) %>%
-   dplyr::select(rand_gp,dth_yn,wpma36_weight_Z,wpma36_length_Z,wpma36_HC_Z, wpma36_weight_zdiff, BPD_any.f) %>%
+   dplyr::select(rand_gp,dth_yn,wpma36_weight_Z,wpma36_length_Z,wpma36_HC_Z, wpma36_weight_zdiff) %>%
   tbl_summary(
     by = rand_gp,
     #missing ="ifany", missing_text = "(Missing)",
@@ -1016,6 +1018,8 @@ summary_table_str2 <- data_36 %>%
   ) 
 # 3. Print the table
 summary_table_str2
+
+###nec_2 
 
 data_nec_2 <- data_elig %>%
   filter(!is.na(dischhome_dtm) | wk44_present == 1) %>%
@@ -1056,14 +1060,17 @@ summary_nec_2_str2 <- data_nec_2 %>%
 # 3. Print the table
 summary_nec_2_str2
 
+##ROP and BPD_any table
+
 data_ROP <- data_elig %>%
   mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
-         ROP_2plus.f = as.factor(ROP_2plus))
+         ROP_2plus.f = as.factor(ROP_2plus),
+         BPD_any.f = as.factor(BPD_any))
        
 
 summary_ROP_str1 <- data_ROP %>%
   filter(ga_strata == 1) %>%
-  dplyr::select(rand_gp,ROP_2plus.f) %>%
+  dplyr::select(rand_gp,ROP_2plus.f, BPD_any.f) %>%
   tbl_summary(
     by = rand_gp,
     #missing ="ifany", missing_text = "(Missing)",
@@ -1079,7 +1086,7 @@ summary_ROP_str1
 
 summary_ROP_str2 <- data_ROP %>%
   filter(ga_strata == 2) %>%
-  dplyr::select(rand_gp,ROP_2plus.f) %>%
+  dplyr::select(rand_gp,ROP_2plus.f, BPD_any.f) %>%
   tbl_summary(
     by = rand_gp,
     #missing ="ifany", missing_text = "(Missing)",
@@ -1093,7 +1100,7 @@ summary_ROP_str2 <- data_ROP %>%
 # 3. Print the table
 summary_ROP_str2
 
-
+###sepsis - those who survive to 44wk PMA
 
 data_44 <- data_elig %>%
   filter(wk44_present == 1) %>%
