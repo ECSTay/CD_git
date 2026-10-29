@@ -1,0 +1,1139 @@
+---
+title: "CD_Results_Subsection"
+author: "Evelyn Tay"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(broom)
+library(gt)
+library(gtsummary)
+library(stringr)
+library(officedown)
+library(tidyverse)
+library(kableExtra)
+library(logbin)
+library(Amelia)
+library(lubridate)
+library(parsnip)
+library(censored)
+library(broom)
+library(rms)
+library(mice)
+library(survRM2)
+library(lmtest)
+library(survminer)
+library(dplyr)
+library(tidyr)
+library(Hmisc)
+library(survival)
+library(MASS)
+library(sandwich)
+library(marginaleffects)
+library(fwb)
+library(forcats)
+library(purrr)
+library(AER)
+options(survfit.rmean = "common")
+
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v0.9.csv", stringsAsFactors = FALSE, header = TRUE)
+
+data_raw <- data_raw %>%
+   mutate(nonrand_gp = case_when(study_id == "CD-04011" ~ 1, .default = nonrand_gp)) %>%#intervention
+    mutate(multiple = case_when(study_id == "CD-04089" ~ 0, .default = multiple)) # identified as a singleton 2026-10-14
+data_raw <- data_raw %>%
+   mutate(Birth_weight_Z = case_when(study_id == "CD-14010" ~ "0.2019", .default = Birth_weight_Z)) %>% #58th centile for weight
+   mutate(Birth_HC_Z = case_when(study_id == "CD-14010" ~ "0.5244", .default = Birth_HC_Z)) #70th centile for HC
+#Hardcoded due to baby being too young for Fenton Growth Charts
+# Used qnorm() function to calculate z-scores
+
+#death <=36w
+possible_formats <- c("dmy", "ymd", "mdy", "dmy HMS", "ymd HMS", "ymd HM")
+
+
+data <- data_raw %>%
+  mutate(sex.f = factor(sex),
+         Birth_weight_Z = as.numeric(Birth_weight_Z),
+         BWZ_cat = case_when(Birth_weight_Z < -2 ~ 1, 
+                             Birth_weight_Z < -1 ~ 2,
+                             Birth_weight_Z < 0 ~ 3,
+                             Birth_weight_Z >= 0 ~ 4,
+                             .default = NA),
+         BWZ_bin = case_when(Birth_weight_Z < 0 ~ 0, 
+                             Birth_weight_Z >= 0 ~ 1,
+                             .default = NA),
+         BWZ_cat.f = as.factor(BWZ_cat),
+         BWZ_cat.f = fct_relevel(BWZ_cat.f,"3","1","2","4"),
+         Birth_HC_Z = as.numeric(Birth_HC_Z),
+         wpma36_weight_Z = as.numeric(wpma36_weight_Z),
+         wpma36_HC_Z = as.numeric(wpma36_HC_Z),
+         wpma36_length_Z = as.numeric(wpma36_length_Z),
+         wpma36_weight_zdiff = wpma36_weight_Z - Birth_weight_Z,
+         oxygen_supplementation_duration = as.numeric(oxygen_supplementation_duration),
+         spo2_24av = as.numeric(spo2_24av),
+         b_hc = as.numeric(b_hc),
+         rand_gp = case_when(study_id == "CD-04011" ~ 1, .default = rand_gp),
+         rand_gp = case_when(rand_gp == 2 ~ 0, .default = rand_gp),
+         nonrand_gp = case_when(nonrand_gp == 2 ~ 0, .default = nonrand_gp),
+         ans = case_when(ans == "" ~ "1", ans == "NI" ~ "1", ans == "0" ~ "1", .default = ans),
+         ans.factor = fct_relevel(ans,"3","2","4","1"),
+         recr_hosp = case_when(recr_hosp == 13 ~ 1, .default = recr_hosp),
+         recr_hosp.factor = factor(recr_hosp),
+         recr_hosp.factor = fct_relevel(recr_hosp.factor, "1", "4","2","5","6","7","9","10","11","14","3"),
+         ga_strata.f = factor(ga_strata - 1), #Strata 0 = <28weeks, #Strata 1 = 28-32 Weeks
+         date_42wpma = as.Date(date_36wpma) + weeks(6),
+         date_44wpma = as.Date(date_36wpma) + weeks(8),
+         date_52wpma = as.Date(date_36wpma) + weeks(16),
+         wd_1 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt) < as.Date(date_36wpma)) ~ 1, .default = 0),
+         dth_1 = case_when(dth_yn == 1 & (as.Date(dth_dtm) < as.Date(date_36wpma)) ~ 1, .default = 0),
+         LKA_1 = case_when(is.na(death_36wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0),
+         wk36_present = case_when(wd_1 == 1 | dth_1 == 1 | LKA_1 == 1 ~ 0, .default = 1),
+         wd_3 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_44wpma ~ 1, .default = 0),
+        dth_3 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_44wpma ~ 1, .default = 0),
+        LKA_3 = case_when(is.na(death_44wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0),
+        wk44_present = case_when(wd_3 == 1 | dth_3 == 1 | LKA_3 == 1 ~ 0, .default = 1),
+         IVH = case_when(IVH == 5 ~ 4, .default = IVH),
+         IVH = case_when(study_id == "CD-02019" ~ 4, .default = IVH),
+         IVH.factor = as.factor(IVH),
+         rop = case_when(rop == "5" ~ "0", rop == "NI" ~ "0", .default = rop),
+         rop_plus_yn1 = case_when(rop == "0" ~ "0", rop == "5" ~ "0",  rop == "NI" ~ "0",
+                                  rop_plus_yn == "NI" ~ "0", rop_plus_yn == "UNK" ~ "0", .default = rop_plus_yn),
+         roprx1 = case_when(rop == "0" ~ "0", rop == "5" ~ "0", .default = roprx),
+         BPD_any = case_when(BPD == 0 ~ 0, 
+                             BPD > 0 ~ 1, 
+                             is.na(BPD) & death_36wpma == 1 ~ 0,
+                             is.na(BPD) & withdraw_36wpma == 1 ~ NA,
+                             is.na(BPD) ~ NA), 
+         IVH_3 = case_when(IVH == "-Inf" ~ NA,
+                           IVH %in% c("1","2") ~ 0,
+                           IVH %in% c("3","4") ~ 1,
+                           .default = IVH),
+         nec_2 = case_when(necstage %in% c("2","3") ~ "1",
+                           necstage == "1" ~ "0", necstage == "" ~ "0", 
+                           necstage == "NI" ~ "0", is.na(necstage) ~ "0",
+                           is.na(necstage) & death_44wpma == 1 ~ "0",
+                           is.na(necstage) & withdraw_44wpma == 1 ~ NA,
+                           is.na(necstage) & withdraw_dcg == 1 ~ NA,
+                          .default = "0"),
+         nec_2 = as.numeric(nec_2),
+         ROP_2plus = case_when(rop %in% c("3","4","5") ~ 1,
+                               rop == "2" & rop_plus_yn == 1 ~ 1,
+                               is.na(rop) & death_44wpma == 1 ~ 0,
+                               is.na(rop) & withdraw_dcg == 1 ~ NA, #dsicharge to secondary hospital
+                              .default = 0),
+         ROP_2plus = as.numeric(ROP_2plus), #29 in data_elig
+         sepsis_count = case_when(death_44wpma == 1 & !is.na(sepsis_proven_no) ~ sepsis_proven_no,
+                                  death_44wpma == 1 & is.na(sepsis_proven_no) ~ 0,
+                                  sepsis_proven_yn == 0 ~ 0,
+                                  sepsis_proven_yn == "NI" ~ 0,
+                                  is.na(sepsis_proven_yn) ~ 0,
+                                  withdraw_44wpma == 1 ~ NA, #58 in data_elig
+                                  .default = sepsis_proven_no),
+         chorio = case_when(chor_clin_yn == 1 ~ 1, chor_hist == 1 ~ 2, .default = 0),
+          rand.dfor      = as.Date(parse_date_time(rand_dtm, orders = possible_formats)),
+         dob.dfor       = as.Date(parse_date_time(b_dtm, orders = possible_formats)),
+         wd.dfor        = as.Date(parse_date_time(withdraw_dt, orders = possible_formats)),
+         dischhome.dfor = as.Date(parse_date_time(dischhome_dtm, orders = possible_formats)),
+         lastresp.dfor = as.Date(parse_date_time(lastrespsupp_dtm, orders = possible_formats)),
+         dcgdtm.dfor    = as.Date(parse_date_time(dcgdtm, orders = possible_formats)),
+         rand.dfor.correct = case_when(difftime(rand.dfor, dob.dfor, units = "weeks") < 4 ~ rand.dfor,
+                           .default = as.Date(parse_date_time(enrol_dtm, orders = possible_formats))),
+          entry_time_pma = ga_calc + difftime(rand.dfor.correct, dob.dfor, units = "weeks"),
+          skin_damage = case_when(ae_yn == 1 ~ 1,
+                                 .default = 0)
+         )
+
+data_elig <- data %>%
+  filter(rand_sib == 1)
+
+data_sib <- data %>%
+  filter(rand_sib == 0)
+```
+
+
+# Function to calculate birth weight z-score spline for each estimand 
+
+```{r spline_4knot,echo=FALSE, message = FALSE, warning = FALSE}
+
+add_rcs_splines <- function(data, x_var, probs = c(0.1, 0.4, 0.6, 0.9)) {
+ 
+  x_vector <- data %>% pull({{ x_var }})
+  knots_4 <- quantile(x_vector, probs = probs, na.rm = TRUE)
+  spline_matrix <- rcspline.eval(x_vector, knots = knots_4, inclx = TRUE)
+  spline_df <- as.data.frame(spline_matrix)
+  base_name <- deparse(substitute(x_var)) 
+  colnames(spline_df) <- paste0(base_name, 1:ncol(spline_df))
+  return(bind_cols(data, spline_df))
+  
+}
+
+```
+
+# S1: Survival at 36.0 w PMA (logistic regression model)
+
+```{r Estimand_S1, echo=FALSE, message = FALSE, warning = FALSE}
+# To evaluate the effect of randomisation to intervention compared to standard of care on
+# survival to 36.0 w PMA
+#Sens analysis 1) replace all missing wiht alive 2) replace all missing with death
+#table(data$surv,exclude = NULL)#
+
+#use the <= 36wPMA death variable #666 NA = 68
+
+data_S1 <- data_elig %>%
+  filter(wk36_present == 1) %>% #680
+  dplyr::select(dth_yn,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(dth_yn,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
+  #dplyr::select(where(~ any(is.na(.)))) %>% #dth_yn has 2 NA values
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+fit_S1 <- glm(dth_yn ~ rand_gp + multiple + ans.factor + ga_strata.f + sex +
+                       Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+              data = data_S1, family = binomial(link = "logit"))
+
+summary_fit <- summary(fit_S1)
+
+S1_rr_marginal <- avg_comparisons(fit_S1, variables = "rand_gp", type = "response", transform = "exp", comparison = "lnratioavg", vcov = "HC3")
+
+target_variable <- "rand_gp"
+#don't adjust p_value
+aRR <- exp(coef(fit_S1)["rand_gp"])
+#exp(coef()) transforms log-relative risks to relative risks
+conf_int <- exp(confint(fit_S1, "rand_gp"))
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+raw_p_value_1 <- summary_fit$coefficients["rand_gp", "Pr(>|z|)"]
+marg_RR <- round(S1_rr_marginal$estimate, 2)
+marg_Lower_95_CI = S1_rr_marginal[,6]
+marg_Upper_95_CI = S1_rr_marginal[,7]
+p_value_1 <- S1_rr_marginal$p.value
+
+results_1 <- data.frame(
+ #Parameter = target_variable,
+  estimate = round(aRR, digits = 2),
+  Lower_95_CI = round(conf_int[1], digits = 2),
+  Upper_95_CI = round(conf_int[2], digits = 2),
+  raw_p_value = round(raw_p_value_1, digits = 3),
+  marg_estimate <- marg_RR,
+  marg_Lower_95_CI = round(marg_Lower_95_CI, digits = 2),
+  marg_Upper_95_CI = round(marg_Upper_95_CI, digits = 2),
+  p_value = round(p_value_1, digits = 3)
+)
+
+
+results_1 <- results_1 %>%
+rename(marg_estimate = marg_estimate....marg_RR)
+
+
+print(results_1)
+```
+The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (N = 680). 2 were excluded due to missing outcome (death) data leaving 678 participants included in this analysis.
+
+There was insufficient evidence to conclude a significant difference in the risk of survival to 36.0 weeks PMA between the intervention and the control groups (marginal adjusted risk ratio 1.11, 95% CI: 0.17 to 7.36, B-H adjusted p-value = 0.913). The wide confidence interval indicates considerable uncertainty regarding the magnitude of the effect.
+
+# S2: Standardised weight at 36.0 w PMA (window 34.0 to <38.0 w PMA, general linear regression model)
+
+```{r Estimand_S2, echo=FALSE, message = FALSE, warning = FALSE}
+##weight at 36wks
+
+#Outcomes for participants with missing data due to IE.3-IE.5 will be imputed using multiple imputation informed by
+#participant’s prematurity stratum, multiple birth status 
+
+#filter those who died <= 36wPMA
+
+data_S2 <- data_elig %>%
+  filter(wk36_present == 1) %>% #680
+  dplyr::select(study_id,wpma36_weight_Z, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex.f, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex.f, recr_hosp.factor) %>%
+   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+
+res <- amelia(
+  x = as.data.frame(data_S2 %>% dplyr::select(study_id, ga_strata.f, rand_gp, wpma36_weight_Z, multiple, Birth_weight_Z, sex)),
+  m = 9, 
+  p2s = 0, 
+  idvars = "study_id", 
+  noms = c("rand_gp", "ga_strata.f", "multiple") # Treats all 3 as nominal variables
+)
+
+####
+all_models <- (with(res,
+                    glm(wpma36_weight_Z ~ rand_gp + multiple + ans.factor + ga_strata.f + sex.f + recr_hosp.factor +
+                                Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+                                data = data_S2, family = gaussian(link = "identity"))))
+betas <- sapply(all_models, function(mod) coef(mod))
+ses <- sapply(all_models, function(mod) sqrt(diag(vcov(mod))))
+
+#Pool by RUbin's rules
+pooled_results <- mi.meld(q = t(betas), se = t(ses)) # t means transposed - rows to columns
+
+regression_table <- data.frame(
+  Estimate = round(as.vector(pooled_results$q.mi), digits = 4),
+  Std.Error = round(as.vector(pooled_results$se.mi), digits = 4)
+) %>%
+  mutate(t_value = round(Estimate/Std.Error, digits = 4),
+         p_value = round(2 * (1- pnorm(abs(t_value))), digits = 4),
+         z_95 = qnorm(0.975),
+         lower_bound = Estimate - (z_95 * Std.Error),
+         upper_bound = Estimate + (z_95 * Std.Error),
+         row.names = colnames(pooled_results$q.mi)
+         )
+
+
+pooled_coeffs <- as.vector(pooled_results$q.mi)
+pooled_ses <- as.vector(pooled_results$se.mi)
+ 
+t_stats <-pooled_coeffs/ pooled_ses 
+                    
+p_value <- 2 * (1- pnorm(abs(t_stats)))
+
+
+###marginal effects
+
+pooled_marginal_effects <- as.data.frame(avg_comparisons(all_models, vcov = "HC3"))
+
+
+results_2 <- data.frame(
+  estimate = round(regression_table$Estimate[2], digits = 2),
+  Lower_95_CI = round(regression_table$lower_bound[2], digits = 2),
+  Upper_95_CI = round(regression_table$upper_bound[2], digits = 2),
+  raw_p_value = round(regression_table$p_value[2], digits = 3),
+  marg_estimate <- round(pooled_marginal_effects$estimate[9], digits = 2),
+  marg_Lower_95_CI = round(pooled_marginal_effects$conf.low[9], digits = 2),
+  marg_Upper_95_CI = round(pooled_marginal_effects$conf.high[9], digits = 2),
+  p_value = round(pooled_marginal_effects$p.value[9], digits = 3)
+)
+
+
+results_2 <- results_2 %>%
+rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
+print(results_2)
+
+
+
+```
+The data for this estimand includes those participants known to survive until 36.0 weeks PMA (n = 680). 8 were missing their standardised weight Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window and 6 were discharged to secondary hospitals before 36.0 weeks PMA. The weight Z-scores of these 8 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
+
+There was insufficient evidence to conclude a significant difference in the means of standardised weight Z-scores at 36.0 weeks PMA between the control and intervention groups (marginal adjusted difference in means: 0.01, 95% CI: -0.10 to 0.12, B-H adjusted p-value = 0.913).
+
+
+# S3: Standardised length at 36.0 w PMA (window 34.0 to <38.0 w PMA, general linear regression model)
+
+```{r Estimand_S3, echo=FALSE, message = FALSE, warning = FALSE}
+##length at 36wks
+##SAMPLE CODE for GLM - adjusted difference in mean with 95%CI*****
+
+data_S3 <- data_elig %>%
+  filter(wk36_present == 1) %>% #680
+  dplyr::select(study_id,wpma36_length_Z, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+res <- amelia(
+  x = as.data.frame(data_S3 %>% dplyr::select(study_id, ga_strata.f, rand_gp, wpma36_length_Z, multiple, Birth_weight_Z, sex)),
+  m = 9, 
+  p2s = 0, 
+  idvars = "study_id", 
+  noms = c("rand_gp", "ga_strata.f", "multiple") # Treats all 3 as nominal variables
+)
+
+##update amelia code and growth trajectory not helpful
+
+####
+all_models <- (with(res,
+                    glm(wpma36_length_Z ~ rand_gp + multiple + ans.factor + ga_strata.f + sex + recr_hosp.factor +
+                                Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+                                data = data_S3, family = gaussian(link = "identity"))))
+betas <- sapply(all_models, function(mod) coef(mod))
+ses <- sapply(all_models, function(mod) sqrt(diag(vcov(mod))))
+
+#Pool by RUbin's rules
+pooled_results <- mi.meld(q = t(betas), se = t(ses)) # t means transposed - rows to columns
+
+regression_table <- data.frame(
+  Estimate = round(as.vector(pooled_results$q.mi), digits = 4),
+  Std.Error = round(as.vector(pooled_results$se.mi), digits = 4)
+) %>%
+  mutate(t_value = round(Estimate/Std.Error, digits = 4),
+         p_value = round(2 * (1- pnorm(abs(t_value))), digits = 4),
+         z_95 = qnorm(0.975),
+         lower_bound = Estimate - (z_95 * Std.Error),
+         upper_bound = Estimate + (z_95 * Std.Error),
+         row.names = colnames(pooled_results$q.mi)
+         )
+
+
+pooled_coeffs <- as.vector(pooled_results$q.mi)
+pooled_ses <- as.vector(pooled_results$se.mi)
+ 
+t_stats <-pooled_coeffs/ pooled_ses 
+                    
+p_value <- 2 * (1- pnorm(abs(t_stats)))
+
+
+###marginal effects
+
+pooled_marginal_effects <- as.data.frame(avg_comparisons(all_models, vcov = "HC3"))
+
+
+results_3<- data.frame(
+  estimate = round(regression_table$Estimate[2], digits = 2),
+  Lower_95_CI = round(regression_table$lower_bound[2], digits = 2),
+  Upper_95_CI = round(regression_table$upper_bound[2], digits = 2),
+  raw_p_value = round(regression_table$p_value[2], digits = 3),
+  marg_estimate <- round(pooled_marginal_effects$estimate[9], digits = 2),
+  marg_Lower_95_CI = round(pooled_marginal_effects$conf.low[9], digits = 2),
+  marg_Upper_95_CI = round(pooled_marginal_effects$conf.high[9], digits = 2),
+  p_value = round(pooled_marginal_effects$p.value[9], digits = 3)
+)
+
+
+results_3 <- results_3 %>%
+rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
+print(results_3)
+
+```
+The data for this estimand includes those participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised length Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 27 did not have their length recorded at 36.0 week PMA, leaving 645 participants available for analysis. The length Z-scores of these 35 participants were imputed informed by prematurity strata and multiple birth status.
+
+After adjustment for relevant covariates, the intervention group had a statistically significant mean difference of 0.21 in length Z-scores (SD from our cohort translate to cm) compared to the control group, translating to mean difference of approximately 0.64cm* longer than the control group (marginal adjusted difference in means: 0.21, 95% CI: 0.06 to 0.37; B-H adjusted p-value = 0.012).
+
+*0.21 x 3.05 (SD of the crown-heel length at 36.0wk PMA of the cohort)
+
+# S4: Standardised head circumference at 36.0 w PMA (window 34.0 to <38.0 w PMA, general linear regression model)
+```{r Estimand_S4, echo=FALSE, message = FALSE, warning = FALSE}
+##HC at 36wks
+##adjusted difference in mean with 95%CI*****
+
+#Outcomes for participants with missing data due to IE.3-IE.5 will be imputed using multiple imputation informed by
+#participant’s prematurity stratum, multiple birth status and small for gestational age status at birth
+
+data_S4 <- data_elig %>%
+  filter(wk36_present == 1) %>% #680
+  dplyr::select(study_id,wpma36_HC_Z, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+res <- amelia(
+  x = as.data.frame(data_S4 %>% dplyr::select(study_id, ga_strata.f, rand_gp, wpma36_HC_Z, multiple, Birth_weight_Z, sex)),
+  m = 9, 
+  p2s = 0, 
+  idvars = "study_id", 
+  noms = c("rand_gp", "ga_strata.f", "multiple") # Treats all 3 as nominal variables
+)
+
+####
+all_models <- (with(res,
+                    glm(wpma36_HC_Z ~ rand_gp + multiple + ans.factor + ga_strata.f + sex + recr_hosp.factor +
+                                Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+                                data = data_S4, family = gaussian(link = "identity"))))
+betas <- sapply(all_models, function(mod) coef(mod))
+ses <- sapply(all_models, function(mod) sqrt(diag(vcov(mod))))
+
+#Pool by RUbin's rules
+pooled_results <- mi.meld(q = t(betas), se = t(ses)) # t means transposed - rows to columns
+
+regression_table <- data.frame(
+  Estimate = round(as.vector(pooled_results$q.mi), digits = 4),
+  Std.Error = round(as.vector(pooled_results$se.mi), digits = 4)
+) %>%
+  mutate(t_value = round(Estimate/Std.Error, digits = 4),
+         p_value = round(2 * (1- pnorm(abs(t_value))), digits = 4),
+         z_95 = qnorm(0.975),
+         lower_bound = Estimate - (z_95 * Std.Error),
+         upper_bound = Estimate + (z_95 * Std.Error),
+         row.names = colnames(pooled_results$q.mi)
+         )
+
+
+pooled_coeffs <- as.vector(pooled_results$q.mi)
+pooled_ses <- as.vector(pooled_results$se.mi)
+ 
+t_stats <-pooled_coeffs/ pooled_ses 
+                    
+p_value <- 2 * (1- pnorm(abs(t_stats)))
+
+
+###marginal effects
+
+pooled_marginal_effects <- as.data.frame(avg_comparisons(all_models, vcov = "HC3"))
+
+
+results_4<- data.frame(
+  estimate = round(regression_table$Estimate[2], digits = 2),
+  Lower_95_CI = round(regression_table$lower_bound[2], digits = 2),
+  Upper_95_CI = round(regression_table$upper_bound[2], digits = 2),
+  raw_p_value = round(regression_table$p_value[2], digits = 3),
+  marg_estimate <- round(pooled_marginal_effects$estimate[9], digits = 2),
+  marg_Lower_95_CI = round(pooled_marginal_effects$conf.low[9], digits = 2),
+  marg_Upper_95_CI = round(pooled_marginal_effects$conf.high[9], digits = 2),
+  p_value = round(pooled_marginal_effects$p.value[9], digits = 3)
+)
+
+
+results_4 <- results_4 %>%
+rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
+print(results_4)
+
+
+```
+The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised head circumference Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 17 did not have their head circumference measured at 36.0 weeks PMA, leaving 655 participants available for analysis. The head circumference Z-scores of these 25 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status.1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
+
+There was insufficient evidence to conclude a difference in mean standardised head circumference Z scores between the intervention and control groups (adjusted mean difference -0.10, 95% CI: -0.25 to 0.05, B-H adjusted p-value = 0.348).
+
+
+# S5: Difference in weight z-score between  birth $\&$ 36.0 w PMA (window $34.0$ to $<38.0$ w PMA, general linear regression model)
+
+```{r Estimand_S5, echo=FALSE, message = FALSE, warning = FALSE}
+## growth velocity - difference in weight z_scores*****
+##SAMPLE CODE for linear regression model - adjusted difference in mean growth velocity (95%CI)
+##difference from baseline - is the outcome - the estimand is the diffference between trt
+#Outcomes for participants with missing data due to IE.3-IE.5 will be imputed using multiple imputation informed by
+#participant’s prematurity stratum, multiple birth status and small for gestational age status at birth
+
+data_S5 <- data_elig %>%
+  filter(wk36_present == 1) %>% #680
+  dplyr::select(study_id,wpma36_weight_zdiff, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex.f, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex.f, recr_hosp.factor) %>%
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+res_5 <- amelia(
+  x = as.data.frame(data_S5 %>% dplyr::select(study_id, ga_strata.f, rand_gp, wpma36_weight_zdiff, multiple, Birth_weight_Z, sex)),
+  m = 9, 
+  p2s = 0, 
+  idvars = "study_id", 
+  noms = c("rand_gp", "ga_strata.f", "multiple") # Treats all 3 as nominal variables
+)
+
+####
+all_models <- (with(res_5,
+                    glm(wpma36_weight_zdiff ~ rand_gp + multiple + ans.factor + ga_strata.f + sex.f + recr_hosp.factor +
+                                Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+                                data = data_S5, family = gaussian(link = "identity"))))
+betas <- sapply(all_models, function(mod) coef(mod))
+ses <- sapply(all_models, function(mod) sqrt(diag(vcov(mod))))
+
+#Pool by RUbin's rules
+pooled_results <- mi.meld(q = t(betas), se = t(ses)) # t means transposed - rows to columns
+
+regression_table <- data.frame(
+  Estimate = round(as.vector(pooled_results$q.mi), digits = 4),
+  Std.Error = round(as.vector(pooled_results$se.mi), digits = 4)
+) %>%
+  mutate(t_value = round(Estimate/Std.Error, digits = 4),
+         p_value = round(2 * (1- pnorm(abs(t_value))), digits = 4),
+         z_95 = qnorm(0.975),
+         lower_bound = Estimate - (z_95 * Std.Error),
+         upper_bound = Estimate + (z_95 * Std.Error),
+         row.names = colnames(pooled_results$q.mi)
+         )
+
+
+pooled_coeffs <- as.vector(pooled_results$q.mi)
+pooled_ses <- as.vector(pooled_results$se.mi)
+ 
+t_stats <-pooled_coeffs/ pooled_ses 
+                    
+p_value <- 2 * (1- pnorm(abs(t_stats)))
+
+
+###marginal effects
+
+pooled_marginal_effects <- as.data.frame(avg_comparisons(all_models, vcov = "HC3"))
+
+
+results_5 <- data.frame(
+  estimate = round(regression_table$Estimate[2], digits = 2),
+  Lower_95_CI = round(regression_table$lower_bound[2], digits = 2),
+  Upper_95_CI = round(regression_table$upper_bound[2], digits = 2),
+  raw_p_value = round(regression_table$p_value[2], digits = 3),
+  marg_estimate <- round(pooled_marginal_effects$estimate[9], digits = 2),
+  marg_Lower_95_CI = round(pooled_marginal_effects$conf.low[9], digits = 2),
+  marg_Upper_95_CI = round(pooled_marginal_effects$conf.high[9], digits = 2),
+  p_value = round(pooled_marginal_effects$p.value[9], digits = 3)
+)
+
+
+results_5 <- results_5 %>%
+rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
+print(results_5)
+
+```
+The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (N = 680). 8 were missing their weight Z-scores at 36.0 wk PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, and 6 were discharged to secondary hospitals before 36.0wk PMA, leaving 672 participants available for analysis. Their growth velocity outcomes (difference in weight Z-score between birth and 36.0 weeks PMA) were imputed informed by prematurity strata and multiple birth status. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
+
+There was no evidence the adjusted mean growth velocity differed significantly between the control and intervention groups (adjusted mean difference 0.01, 95%CI: -0.10 to 0.12; B-H adjusted p-value = 0.913).
+
+# S8: BPD at $\leq$36.0 w PMA (logistic regression model)
+
+```{r Estimand_S8, echo=FALSE, message = FALSE, warning = FALSE}
+
+data_S8 <- data_elig %>%
+  filter(wk36_present == 1)  %>%
+  dplyr::select(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex.f, recr_hosp.factor) %>%
+  tidyr::drop_na(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex.f) %>%
+  #dplyr::select(where(~ any(is.na(.)))) %>% #dth_yn has 2 NA values
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+fit_S8 <- glm(BPD_any ~ rand_gp + multiple + ans.factor + ga_strata.f + sex.f +
+                        Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+              data = data_S8, family = binomial(link = "logit"))
+
+summary_fit <- summary(fit_S8)
+
+S8_rr_marginal <- avg_comparisons(fit_S8, variables = "rand_gp", type = "response", transform = "exp", comparison = "lnratioavg", vcov = "HC3")
+
+
+target_variable <- "rand_gp"
+#don't adjust p_value
+aRR <- exp(coef(fit_S8)["rand_gp"])
+conf_int <- exp(confint(fit_S8, "rand_gp"))
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+raw_p_value_8 <- round(summary_fit$coefficients["rand_gp", "Pr(>|z|)"], digits = 3)
+marg_RR <- S8_rr_marginal$estimate
+marg_Lower_95_CI = S8_rr_marginal[,6]
+marg_Upper_95_CI = S8_rr_marginal[,7]
+p_value <- S8_rr_marginal$p.value
+
+
+results_8 <- data.frame(
+  #Parameter = target_variable,
+  estimate = round(aRR, digits = 2),
+  Lower_95_CI = round(conf_int[1], digits = 2),
+  Upper_95_CI = round(conf_int[2], digits = 2),
+  raw_p_value = raw_p_value_8,
+  marg_estimate <- round(marg_RR, digits = 2),
+  marg_Lower_95_CI = round(marg_Lower_95_CI, digits = 2),
+  marg_Upper_95_CI = round(marg_Upper_95_CI, digits = 2),
+  p_value = round(p_value, digits = 3)
+)
+
+results_8 <- results_8 %>%
+  rename(marg_estimate = marg_estimate....round.marg_RR..digits...2.)
+
+print(results_8)
+
+###post-hoc analysis proportional odds
+
+#don't adjust p-value
+```
+The data for this estimand includes the randomised and eligible participants known to survive until 36.0 weeks PMA (N = 680). 3 participants were missing data for this outcome. 1 participant had withdrawn from the study after 36.0 weeks PMA and was excluded , leaving 677 included for analysis.
+
+There was insufficient evidence to conclude a significant difference in the risk of any BPD between the control and the intervention groups (marginal adjusted risk ratio 0.86, 95% CI: 0.72 to 1.02; p-value = 0.091).
+
+# S9: BPD severity as defined by Jensen 2019 by $\leq$36.0 w PMA (not analysed)
+
+# S14 Necrotising enterocolitis (NEC) Stage II or greater prior to discharge home or 44.0 weeks PMA, whichever occurs sooner
+
+```{r Estimand_S14, echo=FALSE, message = FALSE, warning = FALSE}
+## the diagnosis of NEC stage IIb or more on Bells classification, amended to NEC Stage II or greater
+#prior to initial discharge home or 44 w PMA, whichever occurs sooner.****
+##does not require the 44wk filter
+
+data_S14 <- data_elig %>%
+  dplyr::select(nec_2,study_id,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex,recr_hosp.factor) %>%
+  #dplyr::select(where(~ any(is.na(.))))
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+fit_S14 <- glm(nec_2 ~ rand_gp + multiple + ans.factor + ga_strata.f + sex +
+                           Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+              data = data_S14, family = binomial(link = "logit"))
+
+summary_fit <- summary(fit_S14) #Odds ratio
+
+
+S14_rr_marginal <- avg_comparisons(fit_S14, variables = "rand_gp", type = "response", transform = "exp", comparison = "lnratioavg", vcov = "HC3")
+
+
+target_variable <- "rand_gp"
+#don't adjust p_value
+aRR <- exp(coef(fit_S14)["rand_gp"])
+conf_int <- exp(confint(fit_S14, "rand_gp"))
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+raw_p_value_14 <- round(summary_fit$coefficients["rand_gp", "Pr(>|z|)"], digits = 3)
+marg_RR <- S14_rr_marginal$estimate
+marg_Lower_95_CI = S14_rr_marginal[,6]
+marg_Upper_95_CI = S14_rr_marginal[,7]
+p_value <- S14_rr_marginal$p.value
+
+
+results_14 <- data.frame(
+ #Parameter = target_variable,
+  estimate = round(aRR, digits = 2),
+  Lower_95_CI = round(conf_int[1], digits = 2),
+  Upper_95_CI = round(conf_int[2], digits = 2),
+  raw_p_value = raw_p_value_14,
+  marg_estimate <- round(marg_RR, digits = 2),
+  marg_Lower_95_CI = round(marg_Lower_95_CI, digits = 2),
+  marg_Upper_95_CI = round(marg_Upper_95_CI, digits = 2),
+  p_value = round(p_value, digits = 3)
+)
+
+results_14 <- results_14 %>%
+  rename(marg_estimate = marg_estimate....round.marg_RR..digits...2.)
+
+print(results_14)
+
+
+#don't adjust p-value
+```
+The data for this estimand included the randomised and eligible participants who have been discharged home or known to survive until 44.0 weeks PMA, whichever occurs sooner (N = 744). No participants had data missing for this outcome in this cohort.
+
+There was insufficient evidence to conclude that there was a difference in risk of NEC Stage II or greater between the intervention and control groups (marginal adjusted risk ratio 0.30, 95%CI: 0.12 to 0.73, p-value = 0.008).
+
+
+# S15: Retinopathy of prematurity (ROP) stage III or greater, or stage II with plus disease present before 44.0 w PMA (logistic regression model)
+
+```{r Estimand_S15, echo=FALSE, message = FALSE, warning = FALSE}
+## retinopathy of prematurity (ROP) stage III or greater, or stage II with plus disease present before 44.0 w PMA
+
+#Randomised trial eligible participants 
+# Participants who have incomplete medical records up to 44.0 w PMA due to IE.3, or IE.4 and are without evidence of
+# ROP stage III or greater, will be excluded from the analysis (i.e. it is unknown whether they later
+# experienced ROP in this time period). Participants with incomplete time-course medical records due
+# to death (IE.7) within 44.0 w PMA will be included in the analysis.
+
+#Fit logistic regression model
+data_S15 <- data_elig %>%
+  dplyr::select(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
+  #dplyr::select(where(~ any(is.na(.)))) %>% dth_yn has 2 NA values
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+fit_S15 <- glm(ROP_2plus ~ rand_gp + multiple + ans.factor + ga_strata.f + sex +
+                           Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+              data = data_S15, family = binomial(link = "logit"))
+
+summary_fit <- summary(fit_S15)
+
+S15_rr_marginal <- avg_comparisons(fit_S15, variables = "rand_gp", type = "response", transform = "exp", comparison = "lnratioavg", vcov = "HC3")
+target_variable <- "rand_gp"
+#don't adjust p_value
+aRR <- exp(coef(fit_S15)["rand_gp"])
+conf_int <- exp(confint(fit_S15, "rand_gp"))
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+raw_p_value_15 <- round(summary_fit$coefficients["rand_gp", "Pr(>|z|)"], digits = 3)
+marg_RR <-S15_rr_marginal$estimate
+marg_Lower_95_CI = S15_rr_marginal[,6]
+marg_Upper_95_CI = S15_rr_marginal[,7]
+p_value <- S15_rr_marginal$p.value
+
+
+results_15 <- data.frame(
+  estimate = round(aRR, digits = 2),
+  Lower_95_CI = round(conf_int[1], digits = 2),
+  Upper_95_CI = round(conf_int[2], digits = 2),
+  raw_p_value = raw_p_value_15,
+  marg_estimate = round(marg_RR, digits = 2),
+  marg_Lower_95_CI = round(marg_Lower_95_CI, digits = 2),
+  marg_Upper_95_CI = round(marg_Upper_95_CI, digits = 2),
+  p_value = round(p_value, digits = 3)
+)
+
+# results_15 <- results_15 %>%
+#   rename(marg_estimate = marg_estimate....round.marg_RR..digits...2.)
+print(results_15)
+
+
+```
+The data for this estimand included the randomised and eligible participants (N = 744). There was no missing data for this outcome.
+
+There was insufficient evidence to conclude a difference in risk of ROP Stage III or greater or ROP Stage II plus disease between the intervention and control groups (marginal adjusted risk ratio 1.44, 95% CI 0.70 to 2.95; p-value = 0.318). The wide confidence interval indicates considerable uncertainty regarding the magnitude of the effect.
+
+
+
+# S18: Number of culture-positive sepsis episodes for participants who survive to 44.0wk PMA (Poisson regression model)
+
+```{r Estimand_S18, echo=FALSE, message = FALSE, warning = FALSE}
+## number of culture-positive sepsis episodes for participants who survive to 44.0 w PMA****
+
+##SAMPLE CODE for  Poisson - adjusted relative rate (95%CI)
+
+# Randomised trial eligible participants, excluding participants who withdrew, were lost to follow-up, 
+#discharged to non-participating level 2 hospital or died before 44.0 wPMA
+
+#Participants with incomplete sepsis records due to death (IE.7) within 36.0 w PMA will be included in the analysis
+# In the absence of evidence for any culture positive sepsis episodes, it will be assumed that there were zero episodes
+
+#Fit Poisson regression model - rate ratio
+
+
+
+
+data_S18 <- data_elig %>%
+  filter(wk44_present == 1) %>%
+  dplyr::select(study_id,sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>% 
+  tidyr::drop_na(sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
+  #dplyr::select(where(~ any(is.na(.))))# 
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+#add a post-hoc analysis
+
+# data_S18_2 <- data_elig %>%
+#   filter(wk44_present == 1) %>%
+#   mutate(sepsisYN = case_when(sepsis_count == 0 ~ 0, sepsis_count > 0 ~ 1, .default = NA)) %>%
+#   dplyr::select(sepsisYN,study_id,sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>% 
+#   tidyr::drop_na(sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
+#   #dplyr::select(where(~ any(is.na(.))))# 
+#   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+fit_S18p <- glm(sepsis_count ~ rand_gp + multiple + ans.factor + ga_strata.f + sex + recr_hosp.factor +
+                               Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+                family = poisson(link="log"), data = data_S18)
+
+#post-hoc analysis
+# fit_S18p2 <- glm(sepsisYN ~ rand_gp + multiple + ans.factor + ga_strata.f + sex + recr_hosp.factor +
+#                                Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+#                 family = binomial(link="logit"), data = data_S18_2)
+
+#marginal effect
+
+dispersiontest(fit_S18p) #AER package: Cameron_Trivedi test - where variance exceeds mean
+
+#Overdispersion test
+
+# data:  fit_S18p
+# z = 1.4668, p-value = 0.07122
+# alternative hypothesis: true dispersion is greater than 1
+# sample estimates:
+# dispersion 
+#   1.598843 
+# 1. dispersion estimate (α or c): This is the calculated dispersion parameter.
+# 	• In a perfect Poisson model, this value is 1.0 (equidispersion).
+# 	• A value greater than 1 (e.g., 1.42) indicates the variance grows faster than the mean, signaling overdispersion.
+# 2. p-value: This evaluates the null hypothesis that your data is equidistributed.
+# 	• If p < 0.05: Reject the null hypothesis. You have statistically significant overdispersion. A standard Poisson model will yield over-optimistic, artificially narrow confidence intervals and incorrect standard errors.
+# 	• If p ≥ 0.05: Fail to reject the null hypothesis. Your Poisson model's distributional assumptions are fine to use.
+
+# fit_S18p_nb <- glm.nb(sepsis_count ~ rand_gp + multiple + ans.factor + ga_strata.f + sex + recr_hosp.factor +
+#                        Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,  
+#                      data = data_S18)
+# 
+# # 3. View the model summary
+# summary(fit_S18p_nb)
+
+S18p_rr_marginal <- avg_comparisons(fit_S18p, variables = "rand_gp", transform = "exp", comparison = "lnratioavg", vcov = "HC3" )
+
+# Model summary
+summary_fit <- summary(fit_S18p)
+raw_p_value_18 <- round(summary_fit$coefficients["rand_gp", "Pr(>|z|)"], digits = 3)
+
+# --- Extract coefficient for 'groupB' ---
+coef_name <- "rand_gp"
+se_value <- sqrt(vcov(fit_S18p)[coef_name, coef_name])  # standard error
+
+# Calculate Relative Risk (RR) and 95% CI
+aRateRatio <- round(exp(coef(fit_S18p)[coef_name]), 2)
+conf_int <- round(exp(confint(fit_S18p, "rand_gp")), 2)
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+marg_RateRatio <- round(S18p_rr_marginal$estimate, 2)
+marg_Lower_95_CI = round(S18p_rr_marginal[,6], 2)
+marg_Upper_95_CI = round(S18p_rr_marginal[,7], 2)
+p_value <- round(S18p_rr_marginal$p.value, 3)
+
+target_variable <- "rand_gp"
+
+results_18 <- data.frame(
+  #Outcome = dth_yn,
+  estimate = aRateRatio,
+  Lower_95_CI = conf_int[1],
+  Upper_95_CI = conf_int[2],
+  raw_p_value = raw_p_value_18,
+  marg_estimate = marg_RateRatio,
+  marg_Lower_95_CI = marg_Lower_95_CI,
+  marg_Upper_95_CI = marg_Upper_95_CI,
+  p_value = p_value
+)
+
+#exp(coef()) transforms log-relative risks to relative risks.
+
+print(results_18)
+
+#don't adjust p-value
+```
+This estimand included the participants who were known to be alive at 44.0 wk PMA (n = 530). There was 1 participant with missing data for this outcome and were excluded leaving 529 participants available for analysis.
+
+There was insufficient evidence to conclude a significant difference in the adjusted rate of number of sepsis episodes between the intervention and control groups (marginal adjusted rate ratio 1.06, 95% CI: 0.47 to 2.38, p-value = 0.883.
+
+##PLATIPUS scores
+
+```{r E1_analysis}
+
+# Platipus score to be derived
+data_plat <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/Plat_data.csv", stringsAsFactors = FALSE, header = TRUE)
+
+# For the CIRCA DIEM trial, the following levels of the ordinal scale will be collapsed together for
+# the statistical analysis and reporting:
+# • Levels 1-3 as all trial eligible participants meet the criteria for score 3
+# • Levels 11-14 as these events may be rare and are collected as either serious adverse events,
+# adverse events of special interest, or from clinical care ultrasound report(s
+
+# table(data_plat$Platipus_score, exclude = NULL)
+# 
+#    3    4    5    6    7    8    9   10   11   12   13   15 <NA> 
+#    8   95   27   28  362   27   42    1   28   10    2   12  227 
+
+#table(data_E1$Plat_score_new)
+
+  #1   4   5   6   7   8   9  10  11  15 
+ # 7  76  22  26 307  25  40   1  33  10 
+
+data_E1 <- data_plat %>%
+  dplyr::select(study_id, Platipus_score) %>%
+  right_join(data_elig, Platipus_score, by = "study_id") %>%
+  mutate(Plat_score_new = case_when(Platipus_score == 3 ~ 1,
+                                    Platipus_score %in% c(11,12,13) ~ 11,
+                                    .default = Platipus_score)) %>%
+data_E1 <- data_E1 %>%
+  dplyr::select(Platipus_score, Plat_score_new, rand_gp, ga_strata, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(Platipus_score, Plat_score_new, rand_gp, ga_strata, multiple, ans.factor, Birth_weight_Z, sex) %>%
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9)) %>%
+  mutate(platipus_score.f = factor(Plat_score_new, ordered = TRUE))
+
+fit_E1 <- polr(platipus_score.f ~ rand_gp + multiple + ans.factor + ga_strata + sex + recr_hosp.factor +
+                                  Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+                    data = data_E1, Hess = TRUE)
+
+summary_fit_E1 <- summary(fit_E1)
+
+
+
+#Wald-s test for p_value
+# 1. Extract the specific coefficient and standard error
+coef_value <- summary(fit_E1)$coefficients["rand_gp", "Value"]
+std_error  <- summary(fit_E1)$coefficients["rand_gp", "Std. Error"]
+
+# 2. Compute the Wald Chi-Squared statistic (df = 1)
+wald_randgp <- (coef_value / std_error)^2
+
+# 3. Calculate the p-value
+p_val_randgp <- pchisq(wald_randgp, df = 1, lower.tail = FALSE)
+
+# 4. Print the result
+print(p_val_randgp)
+
+#Wald-s test for p_value
+# 1. Extract the specific coefficient and standard error
+coef_value <- summary(fit_E1)$coefficients["3|4", "Value"]
+std_error  <- summary(fit_E1)$coefficients["3|4", "Std. Error"]
+
+# 2. Compute the Wald Chi-Squared statistic (df = 1)
+wald_34 <- (coef_value / std_error)^2
+
+# 3. Calculate the p-value
+p_val_34 <- pchisq(wald_34, df = 1, lower.tail = FALSE)
+
+# 4. Print the result
+print(p_val_34)
+
+
+
+
+wald <- list()
+p_val <- list()
+
+p_val <- function(fit_summ) {
+  coef_value <- summary(fit_summ)$coefficients["i", "Value"]
+  std_error  <- summary(fit_summ)$coefficients["i", "Std. Error"]
+  wald <- (coef_value / std_error)^2
+  p_val <- pchisq(wald, df = 1, lower.tail = FALSE)
+
+  return()
+}
+
+levels <- c("3|4", "4|5", "5|6", "6|7", "7|8", "8|9", "9|10", "10|11", "11|12", "12|13", "13|15")
+
+for (i in levels) {
+  p_val(fit_E1)
+  
+  return()
+}
+
+
+E1_diff_marginal <- avg_comparisons( fit_E1, variables = "rand_gp", comparison = "difference", vcov = "HC3")
+E1_diff_marginal <- tidy(E1_diff_marginal)
+E1_diff_marginal$p.value <- 2 * (1 - pnorm(abs(E1_diff_marginal$estimate / E1_diff_marginal$std.error)))
+
+```
+
+
+
+#B-H adjusted p_values
+
+```{r B_H, echo=FALSE, message = FALSE, warning = FALSE}
+
+marg_p_values <- c(0.913,0.891,0.005,0.199,0.891,0.0001,0.0001)
+#raw_p_value_6 = <0.001,raw_p_value_7 = < 0.001)
+adjusted_p_values <- p.adjust(marg_p_values, method = "BH")
+
+print(adjusted_p_values)
+# [1] 0.91300000 0.91300000 0.01166667 0.34825000 0.91300000 0.00035000 0.00035000
+```
+
+
+# Tables for the big table
+```{r big table, echo=FALSE, message = FALSE, warning = FALSE}
+
+big_table <- rbind(results_1,results_2,results_3,results_4,results_5, results_8, results_14, results_15, results_18)
+
+print(big_table)
+
+data_36 <- data_elig %>%
+  filter(wk36_present == 1) %>%
+  mutate(dth_yn = as.factor(dth_yn),
+         rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
+         BPD_any.f = as.factor(BPD_any))
+
+
+summary_table_str1 <- data_36 %>%
+   filter(ga_strata == 1) %>%
+   dplyr::select(rand_gp,dth_yn,wpma36_weight_Z,wpma36_length_Z,wpma36_HC_Z, wpma36_weight_zdiff, BPD_any.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  ) 
+# 3. Print the table
+summary_table_str1
+
+summary_table_str2 <- data_36 %>%
+   filter(ga_strata == 2) %>%
+   dplyr::select(rand_gp,dth_yn,wpma36_weight_Z,wpma36_length_Z,wpma36_HC_Z, wpma36_weight_zdiff, BPD_any.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  ) 
+# 3. Print the table
+summary_table_str2
+
+data_nec_2 <- data_elig %>%
+  filter(!is.na(dischhome_dtm) | wk44_present == 1) %>%
+  mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
+         nec_2.f = as.factor(nec_2),
+         nec_2.f = fct_recode(nec_2.f,
+                             "0"  = "No",
+                             "1"  = "Yes"))
+summary_nec_2_str1 <- data_nec_2 %>%
+  filter(ga_strata == 1) %>%
+  dplyr::select(rand_gp,nec_2.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  )
+# 3. Print the table
+summary_nec_2_str1
+
+summary_nec_2_str2 <- data_nec_2 %>%
+  filter(ga_strata == 2) %>%
+  dplyr::select(rand_gp,nec_2.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  )
+# 3. Print the table
+summary_nec_2_str2
+
+data_ROP <- data_elig %>%
+  mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
+         ROP_2plus.f = as.factor(ROP_2plus))
+       
+
+summary_ROP_str1 <- data_ROP %>%
+  filter(ga_strata == 1) %>%
+  dplyr::select(rand_gp,ROP_2plus.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  )
+# 3. Print the table
+summary_ROP_str1
+
+summary_ROP_str2 <- data_ROP %>%
+  filter(ga_strata == 2) %>%
+  dplyr::select(rand_gp,ROP_2plus.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  )
+# 3. Print the table
+summary_ROP_str2
+
+
+
+data_44 <- data_elig %>%
+  filter(wk44_present == 1) %>%
+  mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
+         sepsis_count.f = as.factor(sepsis_count)
+         )
+
+
+summary_table_44_str1 <- data_44 %>%
+  filter(ga_strata == 1) %>%
+  dplyr::select(rand_gp,sepsis_count.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  )
+# 3. Print the table
+summary_table_44_str1
+
+summary_table_44_str2 <- data_44 %>%
+  filter(ga_strata == 2) %>%
+  dplyr::select(rand_gp,sepsis_count.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  )
+# 3. Print the table
+summary_table_44_str2
+
+```
+
+
