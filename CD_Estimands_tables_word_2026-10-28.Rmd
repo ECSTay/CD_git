@@ -20,7 +20,7 @@ library(tidyr)
 library(MASS)
 
 
-data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v0.9.csv", stringsAsFactors = FALSE, header = TRUE)
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.0.csv", stringsAsFactors = FALSE, header = TRUE)
 
 
 data_raw <- data_raw %>%
@@ -35,10 +35,16 @@ possible_formats <- c("dmy", "ymd", "mdy", "dmy HMS", "ymd HMS", "ymd HM")
 
 data <- data_raw %>%
   mutate(Birth_weight_Z = as.numeric(Birth_weight_Z),
-         BWZ_cat = case_when(Birth_weight_Z < -1 ~ 1, 
-                             Birth_weight_Z >= -1 ~ 0,
-                             .default = Birth_weight_Z),
+          BWZ_cat = case_when(Birth_weight_Z < -2 ~ 1, 
+                             Birth_weight_Z < -1 ~ 2,
+                             Birth_weight_Z < 0 ~ 3,
+                             Birth_weight_Z >= 0 ~ 4,
+                             .default = NA),
+         BWZ_bin = case_when(Birth_weight_Z < 0 ~ 0, 
+                             Birth_weight_Z >= 0 ~ 1,
+                             .default = NA),
          BWZ_cat.f = as.factor(BWZ_cat),
+         BWZ_cat.f = fct_relevel(BWZ_cat.f,"3","1","2","4"),
          Birth_HC_Z = as.numeric(Birth_HC_Z),
          wpma36_weight_Z = as.numeric(wpma36_weight_Z),
          wpma36_HC_Z = as.numeric(wpma36_HC_Z),
