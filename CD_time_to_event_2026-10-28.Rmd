@@ -1,0 +1,905 @@
+---
+title: "CD_time_to_event"
+author: "Evelyn Tay"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(broom)
+library(gt)
+library(gtsummary)
+library(stringr)
+library(officedown)
+library(tidyverse)
+library(kableExtra)
+library(logbin)
+library(Amelia)
+library(lubridate)
+library(parsnip)
+library(censored)
+library(broom)
+library(rms)
+library(mice)
+library(survRM2)
+library(lmtest)
+library(survminer)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(Hmisc)
+library(survival)
+library(MASS)
+library(sandwich)
+library(marginaleffects)
+library(fwb)
+library(forcats)
+library(purrr)
+options(survfit.rmean = "common")
+
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.0.csv", stringsAsFactors = FALSE, header = TRUE)
+
+data_raw <- data_raw %>%
+   mutate(nonrand_gp = case_when(study_id == "CD-04011" ~ 1, .default = nonrand_gp)) %>% #intervention
+  mutate(multiple = case_when(study_id == "CD-04089" ~ 0, .default = multiple)) # identified as a singleton 2026-10-14
+data_raw <- data_raw %>%
+   mutate(Birth_weight_Z = case_when(study_id == "CD-14010" ~ "0.2019", .default = Birth_weight_Z)) %>% #58th centile for weight
+   mutate(Birth_HC_Z = case_when(study_id == "CD-14010" ~ "0.5244", .default = Birth_HC_Z)) #70th centile for HC
+#Hardcoded due to baby being too young for Fenton Growth Charts
+# Used qnorm() function to calculate z-scores
+
+#death <=36w
+possible_formats <- c("dmy", "ymd", "mdy", "dmy HMS", "ymd HMS", "ymd HM")
+
+
+data <- data_raw %>%
+  mutate(Birth_weight_Z = as.numeric(Birth_weight_Z),
+         BWZ_cat = case_when(Birth_weight_Z < -2 ~ 1, 
+                             Birth_weight_Z < -1 ~ 2,
+                             Birth_weight_Z < 0 ~ 3,
+                             Birth_weight_Z >= 0 ~ 4,
+                             .default = NA),
+         BWZ_bin = case_when(Birth_weight_Z < 0 ~ 0, 
+                             Birth_weight_Z >= 0 ~ 1,
+                             .default = NA),
+         BWZ_cat.f = as.factor(BWZ_cat),
+         BWZ_cat.f = fct_relevel(BWZ_cat.f,"3","1","2","4"),
+         Birth_HC_Z = as.numeric(Birth_HC_Z),
+         wpma36_weight_Z = as.numeric(wpma36_weight_Z),
+         wpma36_HC_Z = as.numeric(wpma36_HC_Z),
+         wpma36_length_Z = as.numeric(wpma36_length_Z),
+         wpma36_weight_zdiff = wpma36_weight_Z - Birth_weight_Z,
+         oxygen_supplementation_duration = as.numeric(oxygen_supplementation_duration),
+         spo2_24av = as.numeric(spo2_24av),
+         b_hc = as.numeric(b_hc),
+         rand_gp = case_when(study_id == "CD-04011" ~ 1, .default = rand_gp),
+         rand_gp = case_when(rand_gp == 2 ~ 0, .default = rand_gp),
+         nonrand_gp = case_when(nonrand_gp == 2 ~ 0, .default = nonrand_gp),
+         ans = case_when(ans == "" ~ "1", ans == "NI" ~ "1", ans == "0" ~ "1", .default = ans),
+         ans.factor = fct_relevel(ans,"3","2","4","1"),
+         recr_hosp = case_when(recr_hosp == 13 ~ 1, .default = recr_hosp),
+         recr_hosp.factor = factor(recr_hosp),
+         recr_hosp.factor = fct_relevel(recr_hosp.factor, "1", "4","2","5","6","7","9","10","11","14","3"),
+         ga_strata.f = factor(ga_strata - 1), #Strata 0 = <28weeks, #Strata 1 = 28-32 Weeks
+         sex.f  = factor(sex),
+         date_42wpma = as.Date(date_36wpma) + weeks(6),
+         date_44wpma = as.Date(date_36wpma) + weeks(8),
+         date_52wpma = as.Date(date_36wpma) + weeks(16),
+         wd_1 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt) < as.Date(date_36wpma)) ~ 1, .default = 0),
+         dth_1 = case_when(dth_yn == 1 & (as.Date(dth_dtm) < as.Date(date_36wpma)) ~ 1, .default = 0),
+         LKA_1 = case_when(is.na(death_36wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0),
+         wk36_present = case_when(wd_1 == 1 | dth_1 == 1 | LKA_1 == 1 ~ 0, .default = 1),
+         wd_3 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_44wpma ~ 1, .default = 0),
+        dth_3 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_44wpma ~ 1, .default = 0),
+        LKA_3 = case_when(is.na(death_44wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0),
+        wk44_present = case_when(wd_3 == 1 | dth_3 == 1 | LKA_3 == 1 ~ 0, .default = 1),
+         IVH = case_when(IVH == 5 ~ 4, .default = IVH),
+         IVH = case_when(study_id == "CD-02019" ~ 4, .default = IVH),
+         IVH.factor = as.factor(IVH),
+         rop = case_when(rop == "5" ~ "0", rop == "NI" ~ "0", .default = rop),
+         rop_plus_yn1 = case_when(rop == "0" ~ "0", rop == "5" ~ "0",  rop == "NI" ~ "0",
+                                  rop_plus_yn == "NI" ~ "0", rop_plus_yn == "UNK" ~ "0", .default = rop_plus_yn),
+         roprx1 = case_when(rop == "0" ~ "0", rop == "5" ~ "0", .default = roprx),
+         BPD_any = case_when(BPD == 0 ~ 0, 
+                             BPD > 0 ~ 1, 
+                             is.na(BPD) & death_36wpma == 1 ~ 0,
+                             is.na(BPD) & withdraw_36wpma == 1 ~ NA,
+                             is.na(BPD) ~ NA), 
+         nec_2 = case_when(necstage %in% c("2","3") ~ "1",
+                           necstage == "1" ~ "0", necstage == "" ~ "0", 
+                           necstage == "NI" ~ "0", 
+                           is.na(necstage) & death_44wpma == 1 ~ "0",
+                           is.na(necstage) & withdraw_44wpma == 1 ~ NA,
+                           is.na(necstage) & withdraw_dcg == 1 ~ NA,
+                          .default = "0"),
+         nec_2 = as.numeric(nec_2),
+         ROP_2plus = case_when(rop %in% c("3","4","5") ~ 1,
+                               rop == "2" & rop_plus_yn == 1 ~ 1,
+                               is.na(rop) & death_44wpma == 1 ~ 0,
+                               is.na(rop) & withdraw_dcg == 1 ~ NA, #dsicharge to secondary hospital
+                              .default = 0),
+         ROP_2plus = as.numeric(ROP_2plus), #29 in data_elig
+         sepsis_count = case_when(death_44wpma == 1 & !is.na(sepsis_proven_no) ~ sepsis_proven_no,
+                                  death_44wpma == 1 & is.na(sepsis_proven_no) ~ 0,
+                                  sepsis_proven_yn == 0 ~ 0,
+                                  is.na(sepsis_proven_yn) ~ 0,
+                                  withdraw_44wpma == 1 ~ NA, #58 in data_elig
+                                  .default = sepsis_proven_no),
+         chorio = case_when(chor_clin_yn == 1 ~ 1, chor_hist == 1 ~ 2, .default = 0),
+          rand.dfor      = as.Date(parse_date_time(rand_dtm, orders = possible_formats)),
+         dob.dfor       = as.Date(parse_date_time(b_dtm, orders = possible_formats)),
+         wd.dfor        = as.Date(parse_date_time(withdraw_dt, orders = possible_formats)),
+        dischhome_dtm = case_when(study_id %in% c("CD-13066", "CD-06007")~ NA, .default = dischhome_dtm), #dth_date was filled in as dischhome_dtm i
+         dischhome.dfor = as.Date(parse_date_time(dischhome_dtm, orders = possible_formats)),
+         lastresp.dfor = as.Date(parse_date_time(lastrespsupp_dtm, orders = possible_formats)),
+        dcgdtm = case_when(study_id == "CD-06007" ~ NA, .default = dcgdtm),
+         dcgdtm.dfor    = as.Date(parse_date_time(dcgdtm, orders = possible_formats)),
+         rand.dfor.correct = case_when(difftime(rand.dfor, dob.dfor, units = "weeks") < 4 ~ rand.dfor,
+                           .default = as.Date(parse_date_time(enrol_dtm, orders = possible_formats))),
+          entry_time_pma = ga_calc + difftime(rand.dfor.correct, dob.dfor, units = "weeks"),
+          skin_damage = case_when(ae_yn == 1 ~ 1,
+                                 .default = 0),
+        terthosp = case_when(is.na(dcgdtm.dfor) ~ 0,
+                             !is.na(dcgdtm.dfor) ~ 1),
+        dischome = case_when(is.na(dischhome.dfor) ~ 0,
+                             !is.na(dischhome.dfor) ~ 1),
+        lastresp  = case_when(is.na(lastresp.dfor) ~ 0,
+                             !is.na(lastresp.dfor) ~ 1)
+         )
+
+data_elig <- data %>%
+  filter(rand_sib == 1)
+
+data_sib <- data %>%
+  filter(rand_sib == 0)
+```
+
+
+# Function to calculate birth weight z-score spline for each estimand 
+
+```{r spline_4knot, echo=FALSE, message = FALSE, warning = FALSE}
+
+add_rcs_splines <- function(data, x_var, probs = c(0.1, 0.4, 0.6, 0.9)) {
+ 
+  x_vector <- data %>% pull({{ x_var }})
+  knots_4 <- quantile(x_vector, probs = probs, na.rm = TRUE)
+  spline_matrix <- rcspline.eval(x_vector, knots = knots_4, inclx = TRUE)
+  spline_df <- as.data.frame(spline_matrix)
+  base_name <- deparse(substitute(x_var)) 
+  colnames(spline_df) <- paste0(base_name, 1:ncol(spline_df))
+  return(bind_cols(data, spline_df))
+  
+}
+
+```
+
+# S6: Time to discharge alive from tertiary hospital (censored at 52 w PMA, proportional hazards model)
+
+```{r Estimand_S6, echo=FALSE, message = FALSE, warning = FALSE}
+## duration of hospital stay - time tp discharge alive or tf to level 2 hospital, censored at 52 weeks****
+
+#Missing date of discharge from tertiary hospital due to IE.3 or IE.4 will be censored at the date of withdrawal or
+#date of last known contact with research staff. Missing date of discharge alive due to death (IE.7)
+#during hospital stay will be censored at 52.0 weeks PMA
+
+data_S6 <- data_elig %>%
+  dplyr::select(study_id, rand.dfor.correct, dth_yn, dob.dfor, wd.dfor, dcgdtm.dfor, ga_calc, death_52wpma, recr_hosp.factor, ga_strata.f,
+                withdraw_52wpma, Birth_weight_Z, rand_gp, multiple, ans.factor, sex) %>%
+  tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex,recr_hosp.factor) %>%
+  mutate(
+    # 1. Calculate the difference between two dates in weeks
+    chron_age_rand = as.numeric(difftime(rand.dfor.correct, dob.dfor, units = "weeks")),
+    chron_age_wd = as.numeric(difftime(wd.dfor, dob.dfor, units = "weeks")),
+    chron_age_dc = as.numeric(difftime(dcgdtm.dfor, dob.dfor, units = "weeks")),
+    # 2. Add those weeks to a third date (converted to weeks for proper addition)
+    entry_pma = ga_calc + chron_age_rand,
+    wd_pma = ga_calc + chron_age_wd,
+    discharge_pma = ga_calc + chron_age_dc,
+    # 3. Event
+    discharged_miss_reason = case_when(!is.na(dcgdtm.dfor) ~ 0, #0 = date present
+                                       death_52wpma == 1 ~ 1, #dth at 52PMA
+                                       withdraw_52wpma == 1 ~ 2, #wd at 52PMA
+                                       .default = 3),  #3 = unknown
+    discharged_52pma = case_when((discharged_miss_reason == 0 & discharge_pma <= 52) ~ 1, 
+                                 (discharged_miss_reason == 0 & discharge_pma > 52) ~ 0,
+                                 discharged_miss_reason == 1 ~ 0,
+                                 discharged_miss_reason == 2 ~ 0,
+                                 discharged_miss_reason == 3 ~ NA,
+                                 .default = NA
+                                 ),
+    # 4. exit_pma
+    exit_pma = case_when(discharged_52pma == 1 ~ discharge_pma, 
+                         (discharged_miss_reason == 0 & discharge_pma > 52) ~ 52,
+                         discharged_miss_reason == 1 ~ 52,
+                         discharged_miss_reason == 2 ~ wd_pma,
+                         discharged_miss_reason == 3 ~ NA,
+                         .default = NA
+                         )
+  )
+
+data_S6 <- data_S6 %>%
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+
+fit_S6 <- coxph(Surv(time = entry_pma, time2 = exit_pma, event = discharged_52pma) ~ rand_gp + multiple + ans.factor + ga_strata.f + sex + strata(recr_hosp.factor) + Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3, 
+                data = data_S6[which(data_S6$exit_pma > data_S6$entry_pma),])
+fit_summary_6 <- summary(fit_S6)
+
+# Marginal effects: risk
+set.seed(245679640)
+S6_risk_marginal_ratio <- avg_comparisons(fit_S6, variables = "rand_gp", type = "risk", comparison = "ratio") |>
+  inferences(method = "fwb", R = 1000) #produces the hazard relative 
+
+S6_tab_marginal <- tidy(S6_risk_marginal_ratio)
+#S6_tab_marginal_ratio$p.value <-  2 * (1 - pnorm(abs(S6_tab_marginal_ratio$estimate / S6_tab_marginal_ratio$std.error)))
+
+aHR <- round(exp(coef(fit_S6)["rand_gp"]), digits = 2)
+conf_int <- round(exp(confint(fit_S6, "rand_gp")), digits = 2)
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+Lower_95_CI <- conf_int[1] 
+Upper_95_CI <- conf_int[2] 
+p_value_raw_6  <- round(fit_summary_6$coefficients["rand_gp", "Pr(>|z|)"], digits = 3)
+marg_Lower_95_CI = round((S6_tab_marginal$conf.low), digits = 2)
+marg_Upper_95_CI = round((S6_tab_marginal$conf.high), digits = 2)
+marg_HR <- round((S6_tab_marginal$estimate), digits = 2)
+p_value_6 <- round(S6_tab_marginal[,5], digits = 3)
+
+target_variable <- "rand_gp"
+
+results_6 <- data.frame(
+  estimate = aHR,
+  Lower_95_CI = Lower_95_CI,
+  Upper_95_CI = Upper_95_CI,
+  p_value = p_value_raw_6,
+  marg_HR <- marg_HR,
+  marg_Lower_95_CI = marg_Lower_95_CI,
+  marg_Upper_95_CI = marg_Upper_95_CI,
+  p_value = p_value_6
+)
+
+results_6 <- results_6 %>%
+rename(marg_estimate = marg_HR....marg_HR)
+
+print(results_6)
+
+# Reference Profile for covariates; select participant closest to zero BW z-score for spline
+target_z_score <- 0
+closest_index <- which.min(abs(data_S6$Birth_weight_Z - target_z_score))
+ref_Z1 <- data_S6$Birth_weight_Z1[closest_index]
+ref_Z2 <- data_S6$Birth_weight_Z2[closest_index]
+ref_Z3 <- data_S6$Birth_weight_Z3[closest_index]
+
+
+ref_grid6.2 <- data.frame( #baseline in the control group
+      rand_gp          = rep(c(0, 1), 2),
+      multiple         = 0,
+      ans.factor       = factor(levels(data_S6$ans.factor)[1], levels = levels(data_S6$ans.factor)),
+      ga_strata.f      = rep(c(factor(levels(data_S6$ga_strata.f)[1], levels = levels(data_S6$ga_strata.f)),
+                               factor(levels(data_S6$ga_strata.f)[2], levels = levels(data_S6$ga_strata.f))), each = 2),
+      sex             = 0,
+      recr_hosp.factor = factor(levels(data_S6$recr_hosp.factor)[1], levels = levels(data_S6$recr_hosp.factor)),
+      Birth_weight_Z1  = ref_Z1,
+      Birth_weight_Z2  = ref_Z2,
+      Birth_weight_Z3  = ref_Z3
+ )
+
+    # Adjusted median survival times
+
+adj_curves6.2 <- survfit(fit_S6, newdata = ref_grid6.2)
+
+    # Upper limit for restricted mean survival time
+max_tau <- min(
+      max(data_S6$exit_pma[data_S6$rand_gp == 0], na.rm = TRUE),
+      max(data_S6$exit_pma[data_S6$rand_gp == 1], na.rm = TRUE)
+)
+
+    # Extract relative effect (aHR), for CIs, replace with your actual lower/upper boundaries from your fwb bootstrap
+hr_est  <- round(S6_risk_marginal_ratio$estimate, digits = 2)
+hr_lci  <- marg_Lower_95_CI
+hr_uci  <- marg_Upper_95_CI
+
+    # Medians (Using the safe quantile method)
+medians <- quantile(adj_curves6.2, probs = 0.5)
+med_c1   <- round(medians$quantile[1], 1)
+med_i1   <- round(medians$quantile[2], 1)
+med_c2   <- round(medians$quantile[3], 1)
+med_i2  <- round(medians$quantile[4], 1)
+med_diff1 <- round(med_i1 - med_c1, 1)
+med_diff2 <- round(med_i2 - med_c2, 1)
+
+    # Fixed Probabilities at 40 Weeks
+prob_summary <- summary(adj_curves6.2, times = 40)
+prob_c1       <- round(prob_summary$surv[1] * 100, 1)
+prob_i1       <- round(prob_summary$surv[2] * 100, 1)
+prob_c2       <- round(prob_summary$surv[3] * 100, 1)
+prob_i2       <- round(prob_summary$surv[4] * 100, 1)
+prob_diff1    <- round(prob_i1 - prob_c1, 1)
+prob_diff2    <- round(prob_i2 - prob_c2, 1)
+
+    # RMST (Using the internal matrix tool)
+calc_matrix <- survival:::survmean(adj_curves6.2, rmean = max_tau)$matrix
+rmst_c1      <- round(calc_matrix[1, "rmean"], 1)
+rmst_i1      <- round(calc_matrix[2, "rmean"], 1)
+rmst_c2      <- round(calc_matrix[3, "rmean"], 1)
+rmst_i2      <- round(calc_matrix[4, "rmean"], 1)
+rmst_diff1   <- round(rmst_i1 - rmst_c1, 1)
+rmst_diff2   <- round(rmst_i2- rmst_c2, 1)
+
+ # Combine results and format for reporting
+results_df_6.2 <- tibble::tribble(
+     ~Section, ~Metric, ~Stratum, ~Control, ~Intervention, ~Effect, ~P_Value,
+
+        # Section 1: Relative
+     "Relative Treatment Effect", "Marginal Risk Ratio","", "Reference (1.0)", "—", paste0(hr_est, " (", hr_lci, " to ", hr_uci, ")"), paste0(p_value_6),
+     
+
+        # Section 2: Absolute
+      "Absolute Time Metrics", "Median Time to Discharge Home Alive (Weeks)", "1", as.character(med_c1), as.character(med_i1), paste0("Difference: ", med_diff1, " weeks"), "—",
+      "Absolute Time Metrics", "", "2", as.character(med_c2), as.character(med_i2), paste0("Difference: ", med_diff2, " weeks"), "—",
+      "Absolute Time Metrics", "Not yet Discharged at 40 Weeks PMA", "1", paste0(prob_c1, "%"), paste0(prob_i1, "%"), paste0("Risk Difference: ", prob_diff1, "%"), "—",
+     "Absolute Time Metrics", "", "2", paste0(prob_c2, "%"), paste0(prob_i2, "%"), paste0("Risk Difference: ", prob_diff2, "%"), "—",
+      "Absolute Time Metrics", "Restricted Mean Survival Time (RMST)", "1", paste0(rmst_c1, " weeks"), paste0(rmst_i1, " weeks"), paste0("RMST Difference: ", rmst_diff1, " weeks"), "-",
+     "Absolute Time Metrics", "", "2", paste0(rmst_c2, " weeks"), paste0(rmst_i2, " weeks"), paste0("RMST Difference: ", rmst_diff2, " weeks"), "-"
+     )
+
+# Tabulate
+        publication_table_6.2 <- results_df_6.2 %>%
+          group_by(Section) %>%
+          gt() %>%
+          tab_header(title = md("**Table X: Analysis for Time to Tertiary Hospital Discharge**")) %>%
+          cols_label(
+              Metric = md("**Evaluation Metric**"),
+              Stratum = md("**Stratum**"),
+              Control = md("**Control Group**"),
+              Intervention = md("**Intervention Group**"),
+              Effect = md("**Treatment Effect Estimate (95% Confidence Interval)**"),
+              P_Value = md("**P_Value**")
+        ) %>%
+        cols_align(align = "left", columns = Metric) %>%
+        cols_align(align = "center", columns = c(Stratum, Control, Intervention, Effect, P_Value)) %>%
+        tab_footnote(
+          footnote = "Stratum 1 = <28 weeks PMA, Stratum 2 = 28-32 weeks PMA.",
+          locations = cells_column_labels(columns = Stratum)) %>%
+         tab_footnote(
+          footnote = "Adjusted for treatment allocation, multiplicity, maternal antenatal steroids, gestational age stratum, infant sex, recruiting centre, and birth weight z-score modeled via a natural cubic spline matrix. Confidence intervals are derived from a fractional weighted bootstrap (fwb) with 1,000 replications.",
+          locations = cells_body(columns = Metric, rows = 1)) %>%
+        tab_footnote(
+          footnote = paste0("Restricted to a maximum follow-up horizon (tau) of ", round(max_tau, 1), " weeks post-menstrual age."),
+          locations = cells_body(columns = Metric, rows = 4)) %>%
+        tab_options(
+          row_group.font.weight = "bold",
+          table.border.top.color = "black",
+          table.border.top.width = px(2),
+          table.border.bottom.color = "black",
+          table.border.bottom.width = px(2),
+          table_body.border.bottom.color = "black",
+          table_body.border.bottom.width = px(1),
+          column_labels.border.bottom.color = "black",
+          column_labels.border.bottom.width = px(1.5),
+          heading.border.bottom.style = "none"
+        )
+
+publication_table_6.2
+# 4. TEST PROPORTIONAL HAZARDS ASSUMPTION --------------------------------------
+# cox.zph tests whether the log hazard ratios change over time
+# 4. TEST PROPORTIONAL HAZARDS ASSUMPTION --------------------------------------
+# cox.zph tests whether the log hazard ratios change over time
+ph_test_6 <- cox.zph(fit_S6)
+
+print("--- PROPORTIONAL HAZARDS TEST ---")
+print(ph_test_6)
+
+fit_S6_curves <- survfit(fit_S6, newdata = ref_grid6.2)
+
+# 1. Extract the underlying survival data matrix from your fit object
+curve_data6 <- surv_summary(fit_S6_curves, data = ref_grid6.2)
+
+# 2. Process data and explicitly inject your clinical cohort labels
+curve_data6 <- curve_data6 %>%
+  mutate(
+    # Map Treatment Groups based on grid design (Odd rows = Control, Even rows = Intervention)
+    rand_gp = case_when(
+      strata %in% c("1", "3") ~ "Control Group",
+      strata %in% c("2", "4") ~ "Intervention Group"
+    ),
+    # Map Gestational Age Groups to your exact specifications
+    ga_strata.f = case_when(
+      strata %in% c("1", "2") ~ "<28 weeks PMA",
+      strata %in% c("3", "4") ~ "28-<32 weeks PMA"
+    ),
+    # Invert the Survival Function (S(t)) to build Cumulative Discharge Curves
+    cum_discharge    = 1 - surv,
+    lower_discharge  = 1 - upper, # Upper survival threshold becomes lower discharge bound
+    upper_discharge  = 1 - lower  # Lower survival threshold becomes upper discharge bound
+  )
+
+# Ensure the facets follow a logical chronological layout (left to right)
+curve_data6$ga_strata.f <- factor(curve_data6$ga_strata.f, 
+                                 levels = c("<28 weeks PMA", "28-<32 weeks PMA"))
+
+# Dynamically find the maximum time in your dataset to close the window smoothly
+max_time <- max(curve_data6$time, na.rm = TRUE)
+
+# 3. Render the Publication-Quality Faceted Plot Matrix
+library(survminer)
+library(ggplot2)
+library(dplyr)
+
+# 1. Extract the underlying survival data matrix from your fit object
+# 1. Extract the underlying survival data matrix from your fit object
+curve_data6 <- surv_summary(fit_S6_curves, data = ref_grid6.2)
+
+# 2. Process data and explicitly inject your clinical cohort labels
+curve_data6 <- curve_data6 %>%
+  mutate(
+    # Map Treatment Groups based on grid design (Odd rows = Control, Even rows = Intervention)
+    rand_gp = case_when(
+      strata %in% c("1", "3") ~ "Control Group (0)",
+      strata %in% c("2", "4") ~ "Intervention Group (1)"
+    ),
+    # Map Gestational Age Groups to your exact specifications
+    ga_strata.f = case_when(
+      strata %in% c("1", "2") ~ "<28 weeks PMA",
+      strata %in% c("3", "4") ~ "28-<32 weeks PMA"
+    ),
+    # Invert the Survival Function (S(t)) to build Cumulative Discharge Curves
+    cum_discharge    = 1 - surv,
+    lower_discharge  = 1 - upper, # Upper survival threshold becomes lower discharge bound
+    upper_discharge  = 1 - lower  # Lower survival threshold becomes upper discharge bound
+  )
+
+# Ensure the facets follow a logical chronological layout (left to right)
+curve_data$ga_strata.f <- factor(curve_data$ga_strata.f, 
+                                 levels = c("<28 weeks PMA", "28-<32 weeks PMA"))
+
+# 3. DYNAMICALLY FORCE VISUAL 0% START AT THE EARLIEST DATA POINT
+# Finds the exact earliest time recorded for each stratum configuration
+baseline_anchors <- curve_data %>%
+  group_by(rand_gp, ga_strata.f) %>%
+  slice(1) %>% 
+  mutate(
+    time = time,           # Keeps the true earliest observed time point
+    cum_discharge = 0,     # Dynamically forces cumulative discharge rate to exactly 0%
+    lower_discharge = 0,   # Set matching zero-error thresholds
+    upper_discharge = 0
+  )
+
+# Combine the dynamic start positions with your actual data curves
+curve_data_anchored <- bind_rows(baseline_anchors, curve_data6) %>%
+  arrange(ga_strata.f, rand_gp, time)
+
+
+# 4. Render the Publication-Quality Faceted Plot Matrix
+plot6 <- ggplot(curve_data_anchored, aes(x = time, y = cum_discharge, color = rand_gp, fill = rand_gp)) +
+  # Continuous step geometric paths for survival representations
+  geom_step(size = 1) +
+  # Shaded 95% Confidence Interval Ribbons
+  geom_ribbon(aes(ymin = lower_discharge, ymax = upper_discharge), alpha = 0.12, color = NA) +
+  
+  # Generate isolated side-by-side panels for each GA stratum
+  facet_wrap(~ga_strata.f) +   
+  
+  # Apply professional, colorblind-friendly medical hex palettes
+  scale_color_manual(values = c("#1F77B4", "#D62728")) +
+  scale_fill_manual(values = c("#1F77B4", "#D62728")) +
+  
+  # Continuous scale cleaning (Y-axis remains 0% to 100%)
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), 
+                     limits = c(0, 1), 
+                     expand = c(0.01, 0.01)) +
+  
+  # Set x-axis range dynamically across the full breadth of data
+  scale_x_continuous(expand = c(0.01, 0.01)) +
+  
+  # Labels and Structural Typography
+  labs(
+    x = "Weeks PMA",
+    y = "Cumulative Probability of Discharge",
+    color = NULL,
+    fill  = NULL
+  ) +
+  
+  # Minimalist Journal Theme Overrides (Nature/Elsevier Standard)
+  theme_classic(base_size = 14) +
+  theme(
+    axis.text          = element_text(color = "black"),
+    legend.position    = "bottom",
+    legend.title       = element_blank(),                       
+    legend.background  = element_blank(),
+    strip.background   = element_rect(fill = "#F2F2F2", color = NA), 
+    strip.text         = element_text(face = "bold", size = 13, color = "black"), 
+    panel.spacing      = unit(1.5, "lines") 
+  )
+
+# Display the plot
+print(plot6)
+
+ggsave(
+  filename = "Discharge_tertiary.pdf",
+  plot = plot6,
+  width = 10,              # Standard journal page width (inches)
+  height = 6,              # Standard height (inches)
+  units = "in"
+)
+
+# ggsave(
+#   filename = "Discharge_Home_curves.tiff",
+#   plot = plot6,
+#   width = 10,
+#   height = 6,
+#   units = "in",
+#   dpi = 600,               # Publication-grade sharpness
+#   compression = "lzw"      # Compresses the background safely without losing layout details
+# )
+
+```
+The data for these time-to-event estimands included the randomised eligible trial participants (N = 744). Of these participants, 42 were missing their date of tertiary hospital discharge: 38 of these participants had withdrawn from the study (censored at date of withdrawal), 3 had died (censored at 52 weeks PMA) and 1 was missing their date of tertiary hospital discharge. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
+
+On average, participants in the intervention group face a 21% hazard of tertiary hospital discharge occurring at any given point in time compared to the control group (marginally averaged hazard ratio= 1.21; 95% CI: 1.06 to 1.41; p = <0.001).
+
+The hazard ratio (HR) and the marginal risk ratio (RR) address different questions. The HR indicates the difference in rate of tertiary hospital discharge across the whole time period. The RR indicates the average ratio in the cumulative probability of tertiary hospital discharge at the specific time point of discharge between the study groups.
+
+The intervention group was discharged from a tertiary hospital at a median time of approximately 0.5 weeks (3.5 days) less than the control group, they had a 6.9% less probability of still being in a tertiary hospital than the control group at 42 weeks PMA, and had a mean survival time of being discharged from a tertiary hospital that was approximately 0.7 weeks (5 days) less than the control group.
+
+
+```{r Estimand_ S7, echo=FALSE, message = FALSE, warning = FALSE}
+## total duration of hospital (tertiary and Level 2) stay prior to discharge home alive for participants who survive to 52.0 w PMA, censored at 52.0 w PMA****
+
+
+#Missing date of discharge from tertiary hospital due to IE.3 or IE.4 will be censored at the date of withdrawal or
+#date of last known contact with research staff. Missing date of discharge alive due to death (IE.7)
+#during hospital stay will be censored at 52.0 weeks PMA
+
+#CD died in hospital after the age of 52wk PMA
+
+
+data_S7 <- data_elig %>%
+  dplyr::select(study_id, rand.dfor.correct, dob.dfor, BWZ_cat.f, Birth_weight_Z, BWZ_bin, wd.dfor,dischhome.dfor,ga_calc,death_52wpma, recr_hosp.factor, ga_strata.f, withdraw_52wpma, rand_gp, multiple, ans.factor, sex) %>%
+   mutate(
+    # 1. Calculate the difference between two dates in weeks
+    chron_age_rand = as.numeric(difftime(rand.dfor.correct, dob.dfor, units = "weeks")),
+    chron_age_wd = as.numeric(difftime(wd.dfor, dob.dfor, units = "weeks")),
+    chron_age_dc = as.numeric(difftime(dischhome.dfor, dob.dfor, units = "weeks")),
+    # 2. Add those weeks to a third date (converted to weeks for proper addition)
+    entry_pma = ga_calc + chron_age_rand,
+    wd_pma = ga_calc + chron_age_wd,
+    discharge_pma = ga_calc + chron_age_dc,
+    # 3. Event
+    discharged_miss_reason = case_when(!is.na(dischhome.dfor) ~ 0, #0 = date present
+                                       death_52wpma == 1 ~ 1, #dth at 52PMA
+                                       withdraw_52wpma == 1 ~ 2, #wd at 52PMA
+                                       .default = 3),  #3 = unknown
+    discharged_52pma = case_when((discharged_miss_reason == 0 & wd_pma < discharge_pma) ~ 0,
+                                 (discharged_miss_reason == 0 & discharge_pma <= 52) ~ 1, 
+                                 (discharged_miss_reason == 0 & discharge_pma > 52) ~ 0,
+                                 discharged_miss_reason == 1 ~ 0,
+                                 discharged_miss_reason == 2 ~ 0,
+                                 discharged_miss_reason == 3 ~ NA,
+                                 .default = NA
+                                 ),
+    # 4. exit_pma
+    exit_pma = case_when(discharged_52pma == 1 ~ discharge_pma, 
+                         (discharged_miss_reason == 0 & discharge_pma > 52) ~ 52,
+                         discharged_miss_reason == 1 ~ 52,
+                         discharged_miss_reason == 2 ~ wd_pma,
+                         discharged_miss_reason == 3 ~ NA,
+                         .default = NA
+                         )) %>%
+    #5. exclude the rows with missing
+    tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, BWZ_cat.f, sex, recr_hosp.factor,
+                   entry_pma, exit_pma,discharged_52pma) 
+  
+
+# data_S7 <- data_S7 %>%
+#   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+
+ 
+fit_S7 <- coxph( Surv(entry_pma, exit_pma, discharged_52pma) ~ rand_gp + multiple + ans.factor + strata(ga_strata.f) + sex + strata(recr_hosp.factor) + strata(BWZ_cat.f), 
+                 data = data_S7[which(data_S7$exit_pma > data_S7$entry_pma),])
+
+
+fit_summary_7 <- summary(fit_S7)
+
+    # Marginal effects: risk
+#S7_risk_marginal <- avg_comparisons(fit_S7, variables = "rand_gp", type = "risk", vcov = "fwb", R = 1000)
+set.seed(24372640)
+S7_risk_marginal <- avg_comparisons(fit_S7, variables = "rand_gp", type = "risk", comparison = "ratio") |>
+  inferences(method = "fwb", R = 1000)
+
+S7_tab_marginal <- tidy(S7_risk_marginal)
+
+    
+aHR <- round(exp(coef(fit_S7)["rand_gp"]), digits = 2)
+conf_int <- round(exp(confint(fit_S7, "rand_gp")), digits = 2)
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+Lower_95_CI <- conf_int[1] 
+Upper_95_CI <- conf_int[2] 
+p_value_raw_7  <- round(fit_summary_7$coefficients["rand_gp", "Pr(>|z|)"], digits = 3)
+marg_Lower_95_CI = round((S7_tab_marginal$conf.low), digits = 2)
+marg_Upper_95_CI = round((S7_tab_marginal$conf.high), digits = 2)
+##p_value <- S6_risk_marginal$p.value
+marg_HR <- round((S7_tab_marginal$estimate), digits = 2)
+p_value_7 <- round(S7_tab_marginal$p.value, digits = 3)
+
+target_variable <- "rand_gp"
+
+results_7 <- data.frame(
+  estimate = aHR,
+  Lower_95_CI = Lower_95_CI,
+  Upper_95_CI = Upper_95_CI,
+  raw_p_value = p_value_raw_7,
+  marg_HR <- marg_HR,
+  marg_Lower_95_CI = marg_Lower_95_CI,
+  marg_Upper_95_CI = marg_Upper_95_CI,
+  p_value = p_value_7
+)
+
+print(results_7)
+
+
+ref_grid7.2 <- data.frame( #baseline in the control group
+      rand_gp          = rep(c(0, 1), 2),
+      multiple         = 0,
+      ans.factor       = factor(levels(data_S7$ans.factor)[1], levels = levels(data_S7$ans.factor)),
+      ga_strata.f      = rep(c(factor(levels(data_S7$ga_strata.f)[1], levels = levels(data_S7$ga_strata.f)),
+                               factor(levels(data_S7$ga_strata.f)[2], levels = levels(data_S7$ga_strata.f))), each = 2),
+      sex             = 0,
+      recr_hosp.factor = factor(levels(data_S7$recr_hosp.factor)[1], levels = levels(data_S7$recr_hosp.factor)),
+      BWZ_cat.f  = factor(levels(data_S7$BWZ_cat.f)[4], levels = levels(data_S7$BWZ_cat.f))
+ )
+
+    # Adjusted median survival times
+adj_curves7.2 <- survfit(fit_S7, newdata = ref_grid7.2)
+
+    # Upper limit for restricted mean survival time
+max_tau <- min(
+      max(data_S7$exit_pma[data_S7$rand_gp == 0], na.rm = TRUE),
+      max(data_S7$exit_pma[data_S7$rand_gp == 1], na.rm = TRUE)
+)
+
+    # Extract relative effect (aHR), for CIs, replace with your actual lower/upper boundaries from your fwb bootstrap
+hr_est  <- round(S7_tab_marginal$estimate, digits = 2)
+hr_lci  <- marg_Lower_95_CI
+hr_uci  <- marg_Upper_95_CI
+
+    # Medians (Using the safe quantile method)
+medians <- quantile(adj_curves7.2, probs = 0.5)
+med_c1   <- round(medians$quantile[1], 1)
+med_i1   <- round(medians$quantile[2], 1)
+med_c2   <- round(medians$quantile[3], 1)
+med_i2  <- round(medians$quantile[4], 1)
+med_diff1 <- round(med_i1 - med_c1, 1)
+med_diff2 <- round(med_i2 - med_c2, 1)
+
+    # Fixed Probabilities at 40 Weeks
+prob_summary <- summary(adj_curves7.2, times = 40)
+prob_c1       <- round(prob_summary$surv[1] * 100, 1)
+prob_i1       <- round(prob_summary$surv[2] * 100, 1)
+prob_c2       <- round(prob_summary$surv[3] * 100, 1)
+prob_i2       <- round(prob_summary$surv[4] * 100, 1)
+prob_diff1    <- round(prob_i1 - prob_c1, 1)
+prob_diff2    <- round(prob_i2 - prob_c2, 1)
+
+    # RMST (Using the internal matrix tool)
+calc_matrix <- survival:::survmean(adj_curves7.2, rmean = max_tau)$matrix
+rmst_c1      <- round(calc_matrix[1, "rmean"], 1)
+rmst_i1      <- round(calc_matrix[2, "rmean"], 1)
+rmst_c2      <- round(calc_matrix[3, "rmean"], 1)
+rmst_i2      <- round(calc_matrix[4, "rmean"], 1)
+rmst_diff1   <- round(rmst_i1 - rmst_c1, 1)
+rmst_diff2   <- round(rmst_i2- rmst_c2, 1)
+
+ # Combine results and format for reporting
+results_df_7.2 <- tibble::tribble(
+     ~Section, ~Metric, ~Stratum, ~Control, ~Intervention, ~Effect, ~P_Value,
+
+        # Section 1: Relative
+     "Relative Treatment Effect", "Marginal Risk Ratio","", "Reference (1.0)", "—", paste0(hr_est, " (", hr_lci, " to ", hr_uci, ")"), paste0(p_value_7),
+     
+
+        # Section 2: Absolute
+      "Absolute Time Metrics", "Median Time to Discharge Home Alive (Weeks)", "1", as.character(med_c1), as.character(med_i1), paste0("Difference: ", med_diff1, " weeks"), "—",
+      "Absolute Time Metrics", "", "2", as.character(med_c2), as.character(med_i2), paste0("Difference: ", med_diff2, " weeks"), "—",
+      "Absolute Time Metrics", "Not yet Discharged at 40 Weeks PMA", "1", paste0(prob_c1, "%"), paste0(prob_i1, "%"), paste0("Risk Difference: ", prob_diff1, "%"), "—",
+     "Absolute Time Metrics", "", "2", paste0(prob_c2, "%"), paste0(prob_i2, "%"), paste0("Risk Difference: ", prob_diff2, "%"), "—",
+      "Absolute Time Metrics", "Restricted Mean Survival Time (RMST)", "1", paste0(rmst_c1, " weeks"), paste0(rmst_i1, " weeks"), paste0("RMST Difference: ", rmst_diff1, " weeks"), "-",
+     "Absolute Time Metrics", "", "2", paste0(rmst_c2, " weeks"), paste0(rmst_i2, " weeks"), paste0("RMST Difference: ", rmst_diff2, " weeks"), "-"
+     )
+
+# Tabulate
+        publication_table_7.2 <- results_df_7.2 %>%
+          group_by(Section) %>%
+          gt() %>%
+          tab_header(title = md("**Table X: Analysis for Time to Discharge Home Alive**")) %>%
+          cols_label(
+              Metric = md("**Evaluation Metric**"),
+              Stratum = md("**Stratum**"),
+              Control = md("**Control Group**"),
+              Intervention = md("**Intervention Group**"),
+              Effect = md("**Treatment Effect Estimate (95% Confidence Interval)**"),
+              P_Value = md("**P_Value**")
+        ) %>%
+        cols_align(align = "left", columns = Metric) %>%
+        cols_align(align = "center", columns = c(Stratum, Control, Intervention, Effect, P_Value)) %>%
+        tab_footnote(
+          footnote = "Stratum 1 = <28 weeks PMA, Stratum 2 = 28-32 weeks PMA.",
+          locations = cells_column_labels(columns = Stratum)) %>%
+         tab_footnote(
+          footnote = "Adjusted for treatment allocation, multiplicity, maternal antenatal steroids, gestational age stratum, infant sex, recruiting centre, and birth weight z-score modeled via a natural cubic spline matrix. Confidence intervals are derived from a fractional weighted bootstrap (fwb) with 1,000 replications.",
+          locations = cells_body(columns = Metric, rows = 1)) %>%
+        tab_footnote(
+          footnote = paste0("Restricted to a maximum follow-up horizon (tau) of ", round(max_tau, 1), " weeks post-menstrual age."),
+          locations = cells_body(columns = Metric, rows = 4)) %>%
+        tab_options(
+          row_group.font.weight = "bold",
+          table.border.top.color = "black",
+          table.border.top.width = px(2),
+          table.border.bottom.color = "black",
+          table.border.bottom.width = px(2),
+          table_body.border.bottom.color = "black",
+          table_body.border.bottom.width = px(1),
+          column_labels.border.bottom.color = "black",
+          column_labels.border.bottom.width = px(1.5),
+          heading.border.bottom.style = "none"
+        )
+
+publication_table_7.2
+# 4. TEST PROPORTIONAL HAZARDS ASSUMPTION --------------------------------------
+# cox.zph tests whether the log hazard ratios change over time
+ph_test_7 <- cox.zph(fit_S7)
+
+#Adjusted curves
+
+fit_S7_curves <- survfit(fit_S7, newdata = ref_grid7.2)
+
+library(survminer)
+library(ggplot2)
+library(dplyr)
+
+# 1. Extract the underlying survival data matrix from your fit object
+curve_data <- surv_summary(fit_S7_curves, data = ref_grid7.2)
+
+# 2. Process data and explicitly inject your clinical cohort labels
+curve_data <- curve_data %>%
+  mutate(
+    # Map Treatment Groups based on grid design (Odd rows = Control, Even rows = Intervention)
+    rand_gp = case_when(
+      strata %in% c("1", "3") ~ "Control Group",
+      strata %in% c("2", "4") ~ "Intervention Group"
+    ),
+    # Map Gestational Age Groups to your exact specifications
+    ga_strata.f = case_when(
+      strata %in% c("1", "2") ~ "<28 weeks PMA",
+      strata %in% c("3", "4") ~ "28-<32 weeks PMA"
+    ),
+    # Invert the Survival Function (S(t)) to build Cumulative Discharge Curves
+    cum_discharge    = 1 - surv,
+    lower_discharge  = 1 - upper, # Upper survival threshold becomes lower discharge bound
+    upper_discharge  = 1 - lower  # Lower survival threshold becomes upper discharge bound
+  )
+
+# Ensure the facets follow a logical chronological layout (left to right)
+curve_data$ga_strata.f <- factor(curve_data$ga_strata.f, 
+                                 levels = c("<28 weeks PMA", "28-<32 weeks PMA"))
+
+# Dynamically find the maximum time in your dataset to close the window smoothly
+max_time <- max(curve_data$time, na.rm = TRUE)
+
+# 3. Render the Publication-Quality Faceted Plot Matrix
+plot7 <- ggplot(curve_data, aes(x = time, y = cum_discharge, color = rand_gp, fill = rand_gp)) +
+  # Continuous step geometric paths for survival representations
+  geom_step(size = 1) +
+  # Shaded 95% Confidence Interval Ribbons
+  geom_ribbon(aes(ymin = lower_discharge, ymax = upper_discharge), alpha = 0.12, color = NA) +
+  
+  # Generate isolated side-by-side panels for each GA stratum
+  facet_wrap(~ga_strata.f) +   
+  
+  # Apply professional, colorblind-friendly medical hex palettes
+  scale_color_manual(values = c("#1F77B4", "#D62728")) +
+  scale_fill_manual(values = c("#1F77B4", "#D62728")) +
+  
+  # Continuous scale cleaning (Y-axis remains 0% to 100%)
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), 
+                     limits = c(0, 1), 
+                     expand = c(0.01, 0.01)) +
+  
+  # Truncate the timeline window safely to start at week 32
+  coord_cartesian(xlim = c(32, max_time)) +
+  
+  # Labels and Structural Typography (titles removed from scale arguments)
+  labs(
+    x = "Weeks PMA",
+    y = "Cumulative Probability of Discharge",
+    color = NULL,
+    fill  = NULL
+  ) +
+  
+  # Minimalist Journal Theme Overrides (Nature/Elsevier Standard)
+  theme_classic(base_size = 14) +
+  theme(
+    axis.text          = element_text(color = "black"),
+    legend.position    = "bottom",
+    legend.title       = element_blank(),                       # Removes the legend header completely
+    legend.background  = element_blank(),
+    strip.background   = element_rect(fill = "#F2F2F2", color = NA), # Soft banner header background
+    strip.text         = element_text(face = "bold", size = 13, color = "black"), # Bold clinical labels
+    panel.spacing      = unit(1.5, "lines") # Visual breathing room between plots
+  )
+print(plot7)
+# ggsave(
+#   filename = "Discharge_tertiary.pdf",
+#   plot = plot6,
+#   width = 10,              # Standard journal page width (inches)
+#   height = 6,              # Standard height (inches)
+#   units = "in"
+# )
+
+ggsave(
+  filename = "Plot7.tiff",
+  plot = plot7,
+  width = 10,
+  height = 6,
+  units = "in",
+  dpi = 600,               # Publication-grade sharpness
+  compression = "lzw"      # Compresses the background safely without losing layout details
+)
+
+#extracted_data7 <- km_plot_7$plot$data
+#write.csv(extracted_data7, file = "C:/Users/ETay/Downloads/Plot_Data_for_Estimand_S7.csv")
+
+ggsave("km_plot7.png", plot = km_plot7$plot, width = 11, height = 8, dpi = 300)
+```
+
+The data for these time-to-event estimands included the randomised eligible trial participants (N = 744). Of these participants, 42 were missing their date of discharge home: 42 of these participants had withdrawn from the study (censored at date of withdrawal), 10 had died (censored at 52 weeks PMA) and 2 were missing their date of discharge home alive. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
+
+The hazard ratio (HR) and the marginal risk ratio (RR) address different questions. The HR indicates the difference in rate of tertiary hospital discharge across the whole time period. The RR indicates the average ratio in the cumulative probability of tertiary hospital discharge at the specific time point of discharge between the study groups.
+
+On average, participants in the intervention group face a 18% hazard of discharge home alive occurring at any given point in time compared to the control group (marginally averaged hazard ratio= 1.18; 95% CI: 1.02 to 1.40; p = <0.001)
+
+
+```{r TTE_table, echo = FALSE, message=FALSE, warning=FALSE}
+
+data_TTE <- data_elig %>%
+  mutate(terthosp.f = as.factor(terthosp),
+         rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
+         dischome.f = as.factor(dischome),
+         lastresp.f = as.factor(lastresp))
+
+
+summary_table_str1 <- data_TTE %>%
+   filter(ga_strata == 1) %>%
+   dplyr::select(rand_gp,terthosp.f,dischome.f,lastresp.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  ) 
+# 3. Print the table
+summary_table_str1
+
+summary_table_str2 <- data_TTE %>%
+   filter(ga_strata == 2) %>%
+   dplyr::select(rand_gp,terthosp.f,dischome.f,lastresp.f) %>%
+  tbl_summary(
+    by = rand_gp,
+    #missing ="ifany", missing_text = "(Missing)",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)", # Categorical: n/N (%)
+      all_continuous() ~ "{mean} ({sd})"    # Continuous: mean (SD)
+    ),
+    missing = "ifany",       # Change from "no" to "ifany" to show missing rows
+    missing_text = "(Missing)" # Customise the label for the missing row
+  ) 
+# 3. Print the table
+summary_table_str2
+
+```
