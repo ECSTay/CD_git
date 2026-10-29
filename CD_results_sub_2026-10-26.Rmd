@@ -396,7 +396,7 @@ print(results_3)
 ```
 The data for this estimand includes those participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised length Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 27 did not have their length recorded at 36.0 week PMA, leaving 645 participants available for analysis. The length Z-scores of these 35 participants were imputed informed by prematurity strata and multiple birth status.
 
-After adjustment for relevant covariates, the intervention group had a statistically significant mean difference of 0.21 in length Z-scores (SD from our cohort translate to cm) compared to the control group, translating to mean difference of approximately 0.64cm* longer than the control group (marginal adjusted difference in means: 0.21, 95% CI: 0.06 to 0.37; B-H adjusted p-value = 0.012).
+After adjustment for relevant covariates, the intervention group had a statistically significant mean difference of 0.21 in length Z-scores (SD from our cohort translate to cm) compared to the control group, translating to mean difference of approximately 0.64cm* longer than the control group within the cohort (marginal adjusted difference in means: 0.21, 95% CI: 0.06 to 0.37; B-H adjusted p-value = 0.012).
 
 *0.21 x 3.05 (SD of the crown-heel length at 36.0wk PMA of the cohort)
 
@@ -479,7 +479,7 @@ print(results_4)
 ```
 The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised head circumference Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 17 did not have their head circumference measured at 36.0 weeks PMA, leaving 655 participants available for analysis. The head circumference Z-scores of these 25 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status.1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
 
-There was insufficient evidence to conclude a difference in mean standardised head circumference Z scores between the intervention and control groups (adjusted mean difference -0.10, 95% CI: -0.25 to 0.05, B-H adjusted p-value = 0.348).
+There was insufficient evidence to detect a difference in mean standardised head circumference Z scores between the intervention and control groups (adjusted mean difference -0.10, 95% CI: -0.25 to 0.05, B-H adjusted p-value = 0.348).
 
 
 # S5: Difference in weight z-score between  birth $\&$ 36.0 w PMA (window $34.0$ to $<38.0$ w PMA, general linear regression model)
@@ -616,9 +616,9 @@ print(results_8)
 
 #don't adjust p-value
 ```
-The data for this estimand includes the randomised and eligible participants known to survive until 36.0 weeks PMA (N = 744). 36 participants were missing data for this outcome.34 had withdrawn without evidence of BPD, 1 participant had withdrawn from the study after 36.0 weeks PMA and was excluded , leaving 677 included for analysis.
+The data for this estimand includes the randomised and eligible participants known to survive until 36.0 weeks PMA (N = 744). 36 participants were missing data and excluded for this outcome.34 had withdrawn without evidence of BPD, 1 participant had been discharged to a non-participating hospital without evidence of BPD and 1 participant was missing this data altogether.
 
-There was insufficient evidence to conclude a significant difference in the risk of any BPD between the control and the intervention groups (marginal adjusted risk ratio 0.86, 95% CI: 0.72 to 1.02; p-value = 0.091).
+There was insufficient evidence to detect a significant difference in the risk of any BPD between the control and the intervention groups (marginal adjusted risk ratio 0.86, 95% CI: 0.72 to 1.03; p-value = 0.098).
 
 # S9: BPD severity as defined by Jensen 2019 by $\leq$36.0 w PMA (not analysed)
 
@@ -974,7 +974,8 @@ print(adjusted_p_values)
 # Tables for the big table
 ```{r big table, echo=FALSE, message = FALSE, warning = FALSE}
 
-big_table <- rbind(results_1,results_2,results_3,results_4,results_5,results_6, results_7, results_8, results_14, results_15, results_18)
+big_table <- rbind(results_1,results_2,results_3,results_4,results_5,#results_6, results_7,
+                   results_8, results_14, results_15, results_18)
 
 print(big_table)
 
