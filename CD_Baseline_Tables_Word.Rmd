@@ -1,0 +1,527 @@
+---
+title: "CD_Baseline_Tables"
+author: "Evelyn Tay"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(gt)
+library(gtsummary)
+library(dplyr)
+library(stringr)
+library(officedown)
+library(Hmisc)
+library(tidyverse)
+library(kableExtra)
+library(logbin)
+library(Amelia)
+library(lubridate)
+library(parsnip)
+library(censored)
+library(survival)
+library(broom)
+library(rms)
+library(mice)
+library(survRM2)
+library(sandwich)
+library(lmtest)
+library(survminer)
+library(knitr)
+library(gt)
+library(gtsummary)
+library(dplyr)
+library(stringr)
+library(officedown)
+library(Hmisc)
+library(tidyverse)
+library(kableExtra)
+library(logbin)
+library(Amelia)
+library(lubridate)
+library(parsnip)
+library(censored)
+library(survival)
+library(broom)
+library(rms)
+library(mice)
+library(survRM2)
+library(sandwich)
+library(lmtest)
+library(survminer)
+
+data1 <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v0.9.csv", stringsAsFactors = FALSE, header = TRUE)
+
+ data1 <- data1 %>%
+   mutate(nonrand_gp = case_when(study_id == "CD-04011" ~ 1, .default = nonrand_gp)) %>%#intervention to control
+   mutate(multiple = case_when(study_id == "CD-04089" ~ 0, .default = multiple)) # identified as a singleton 2026-10-14
+ data1 <- data1 %>%
+   mutate(Birth_weight_Z = case_when(study_id == "CD-14010" ~ "0.2019", .default = Birth_weight_Z)) %>% #58th centile for weight
+   mutate(Birth_HC_Z = case_when(study_id == "CD-14010" ~ "0.5244", .default = Birth_HC_Z)) #70th centile for HC
+#Hardcoded due to baby being too young for Fenton Growth Charts
+# Used qnorm() function to calculate z-scores
+
+#temp line as this will be changed in the database
+data1$romdtm[which(data1$study_id == "CD-03020")] <- "2025-10-28 10:26:00"
+
+possible_formats <- c("dmy", "ymd", "mdy", "dmy HMS", "ymd HMS", "ymd HM")
+
+
+
+data <- data1 %>%
+  mutate(
+         Birth_HC_Z = as.numeric(Birth_HC_Z),
+         Birth_weight_Z = as.numeric(Birth_weight_Z),
+         b_hc = as.numeric(b_hc),
+         bw = as.numeric(bw),
+         as1.new = case_when(as1 == "" ~ NA, as1 == "NI" ~ NA, as1 == "UNK" ~ NA, .default = as1),
+         as5.new = case_when(as5 == "" ~ NA, as5 == "NI" ~ NA, as5 == "UNK" ~ NA, .default = as5),
+         as1.new = as.numeric(as1.new),
+         as5.new = as.numeric(as5.new),
+         cord_ph = as.numeric(cord_ph),
+         IVH_first_final.factor = as.factor(IVH_first_final),
+         rand_gp = case_when(study_id == "CD-04011" ~ 1, .default = rand_gp),
+         rand_gp = case_when(rand_gp == 2 ~ 0, .default = rand_gp),
+         nonrand_gp = case_when(nonrand_gp == 2 ~ 0, .default = nonrand_gp),
+         rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
+         nonrand_gp = factor(nonrand_gp, levels = c("0","1"), labels = c("Control", "Intervention")),
+         ga_strata.f = ga_strata - 1, #Strata 0 = <28weeks, #Strata 1 = 28-32 Weeks
+         chorio = case_when(chor_clin_yn == 1 ~ 1, chor_hist == 1 ~ 2, .default = 0),
+         chorio.factor = as.factor(chorio),
+         chorio.f.new  = case_when(chorio.factor == "0" ~ "None", chorio.factor == "1" ~ "Clinical", chorio.factor == "2" ~ "Histological"),
+         # rand.dfor      = as.Date(parse_date_time(rand_dtm, orders = possible_formats)),
+         # dob.dfor       = as.Date(parse_date_time(b_dtm, orders = possible_formats)),
+         rand.dtm.correct = case_when(difftime(as.Date(rand_dtm), as.Date(b_dtm), units = "weeks") < 4 ~ rand_dtm,
+                           .default = enrol_dtm),
+         PNA_rand = difftime(rand.dtm.correct, b_dtm, units = "hours"),
+         ans.f = case_when(ans == "" ~ "Unknown",ans == "NI" ~ "Unknown",ans == "0" ~ "Unknown", .default = ans),
+         ans.f.new = case_when(ans.f == "1" ~ "None",ans.f == "2" ~ "Incomplete",ans.f == "3" ~ "Complete", ans.f == "4" ~ "Given >7 days before birth", .default = ans.f),
+         ans_cat.f = fct_relevel(ans.f.new,"None","Incomplete","Complete","Given >7 days before birth"),
+         m_ethnic = case_when(m_ethnic == "1" ~ "African", m_ethnic == "2" ~ "African - American",
+                              m_ethnic == "3" ~ "Asian", m_ethnic == "4" ~ "Asian - Indian", 
+                              m_ethnic == "5" ~ "European/Causasian", m_ethnic == "6" ~ "Indigenous Australian",
+                              m_ethnic == "7" ~ "Torres_Strait Islander", m_ethnic == "8" ~ "Hispanic/Latino",
+                              m_ethnic == "9" ~ "MiddleEastern", m_ethnic == "10" ~ "Maori", m_ethnic == "99" ~ "Other",
+                              .default = "Unknown"),
+         type1.factor = factor(mprob_type___1, levels = c("0","1"), labels = c("No","Yes")),
+         type2.factor = factor(mprob_type___2, levels = c("0","1"), labels = c("No","Yes")),
+         type3.factor = factor(mprob_type___3, levels = c("0","1"), labels = c("No","Yes")),
+         type4.factor = factor(mprob_type___4, levels = c("0","1"), labels = c("No","Yes")),
+         type5.factor = factor(mprob_type___5, levels = c("0","1"), labels = c("No","Yes")),
+         type6.factor = factor(mprob_type___6, levels = c("0","1"), labels = c("No","Yes")),
+         type7.factor = factor(mprob_type___7, levels = c("0","1"), labels = c("No","Yes")),
+         delmode = case_when(delmode == "" ~ "Unknown", delmode == "NI" ~ "Unknown",
+                             is.na(delmode) ~ "Unknown", .default = delmode),
+         delmode = case_when(delmode == "1" ~ "Vaginal", delmode == "2" ~ "Vaginal instrumentation",
+                             delmode == "3" ~ "Caesarean", .default = delmode),
+         prom = case_when(is.na(romdurn) ~ 0, romdurn == 0 ~ 0, .default = 1), #exclude some values here
+         prom.factor = factor(prom, levels = c("0","1"), labels = c("No","Yes")),
+         romdtm_new = ifelse(!grepl(":",romdtm), paste(romdtm, "23:59:00"),romdtm),
+         b_dtm_new = ifelse(!grepl(":",b_dtm), paste(b_dtm, "23:59:00"),b_dtm),
+         romdurn_hr = round(as.numeric(difftime(ymd_hms(romdtm_new),ymd_hms(b_dtm_new), units = "hours")),1),
+         romdurn_hr_new = case_when(romdurn_hr > 0 & romdurn_hr < 24 ~ 0, .default = romdurn_hr), #setting all these values to 0 - ROM the same day
+         romdurn_day = round(as.numeric(difftime(ymd_hms(romdtm_new),ymd_hms(b_dtm_new), units = "days")),1)
+         )
+
+df_multi <- data %>%
+  filter(!is.na(birthord)) %>%
+  group_by(dob) %>%
+  mutate(
+    siblings_same_dob = n(),  # Count children with same DOB
+    multiple_type = case_when(
+      siblings_same_dob == 2 & birthord == 1 ~ "twin",
+      siblings_same_dob == 2 & birthord == 2 ~ "twin",
+      siblings_same_dob == 3 & birthord == 1 ~ "triplet",
+      siblings_same_dob == 3 & birthord == 2 ~ "triplet",
+      siblings_same_dob == 3 & birthord == 3~ "triplet",
+      siblings_same_dob >= 4 ~ paste0(siblings_same_dob, "-tuple")
+    )
+  ) %>%
+  ungroup()
+
+data2 <- df_multi %>%
+  mutate(multiple_type = case_when(study_id %in% c("CD-07024", "CD-07025", "CD-13009","CD-13010","CD-01079",
+                                                   "CD-09023", "CD-09024", "CD-01146") ~ "twin", .default = multiple_type)) 
+data2 <- data2[,c("study_id","multiple_type")]
+
+data <- data %>%
+  left_join(data2, by = "study_id")
+         
+data_elig <- data %>%
+  filter(rand_sib == 1)
+
+data_sib <- data %>%
+  filter(rand_sib == 0)
+
+# Data manipulation
+data_off <- data %>%
+  mutate(
+    sex = case_when(
+      sex== 0 ~ "Female",
+      sex == 1 ~ "Male"
+    ),
+    sex.factor = factor(sex, levels = c("Female", "Male")),
+    multi = case_when(
+      multiple == 0 ~ "Singleton",
+      multiple_type == "twin" ~ "Twin",
+      multiple_type == "triplet" ~ "Triplet",
+      .default  = "Unknown"
+    ),
+    multi.factor = as.factor(multi)
+    )
+
+data_sib <- data_sib %>%
+  mutate(
+    sex = case_when(
+      sex== 0 ~ "Female",
+      sex == 1 ~ "Male"
+    ),
+    sex.factor = factor(sex, levels = c("Female", "Male")),
+    multi = case_when(
+      multiple == 0 ~ "Singleton",
+      multiple_type == "twin" ~ "Twin",
+      multiple_type == "triplet" ~ "Triplet",
+      .default  = "Unknown"
+    ),
+    multi.factor = as.factor(multi)
+    )
+
+
+```
+
+## Offspring factors - Strata 1 - randomised and eligible
+```{r tab.cap="Offspring demographic characteristics - Strata 1", tab.cap.style = "Caption", tab.id = "T1", echo = F}
+
+data_off_rand <- data_off
+
+#data_off_rand$rand_gp.factor = factor(data_off$rand_gp, levels = c("0","1"), labels = c("Control", "Intervention"))
+
+table_demo <- function(data) {
+  
+  table_out <- data %>%
+    filter(rand_sib == 1) %>% 
+    filter(ga_strata == 1) %>%
+    dplyr::select("sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z","b_hc", 
+    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata","IVH_first_final.factor") %>%
+    tbl_summary(by = rand_gp,
+      percent = "column",  # Show percentages by column for most variables
+      missing ="ifany", missing_text = "(Missing)",
+      digits = all_categorical() ~ c(0, 0),  # Precision for categorical variables
+      type = list(
+        sex.factor ~ "categorical",  
+        multi.factor ~ "categorical",
+        ga_calc ~ "continuous",
+        Birth_weight_Z ~ "continuous",
+        Birth_HC_Z ~ "continuous",
+        as1.new ~ "continuous",
+        as5.new ~ "continuous",
+        IVH_first_final.factor ~ "categorical",
+        all_categorical() ~ "categorical",  # Set all categorical as categorical
+        all_continuous() ~ "continuous"  # Set continuous variables
+      ),
+      statistic = list(
+        all_categorical() ~ "{n} / {N} ({p}%)",  # n/N(%) for categorical variables
+        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous
+       # PARTICIPANT ~ "{n}"  # No percentage for PARTICIPANT variable
+      ),
+      label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
+        PNA_rand ~ 'PNA at randomisation (hours)',
+        bw ~ 'Birth weight (g)', Birth_weight_Z ~ 'Birth weight Z-score',
+        b_hc ~ 'Birth head circumference (cm)',         
+        Birth_HC_Z ~ 'Birth head circumference Z-score', 
+        as1.new ~ 'APGAR score at 1 minute', 
+        as5.new ~ 'APGAR score at 5 minutes', 
+        cord_ph ~ 'Cord pH',
+        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+      ) 
+    ) %>%
+        modify_spanning_header(c("stat_1", "stat_2") ~ "**Randomised**") 
+  return(table_out)
+}
+
+table_demo(data_off_rand)
+
+```
+
+## Offspring factors - Strata 1 - siblings
+
+```{r tab.cap="Offspring demographic characteristics - Strata 1 - siblings", tab.cap.style = "Caption", tab.id = "T1", echo = F}
+ 
+
+data_off_sibs <- data_sib
+#data_off_sibs$nonrand_gp.factor = factor(data_sib$nonrand_gp,levels = c("0","1"), labels = c("Control", "Intervention"))
+
+table_demo_sibs <- function(data) {
+  
+  table_out_sibs <- data %>%
+    filter(ga_strata == 1) %>%
+    dplyr::select("sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z","b_hc", 
+    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "nonrand_gp", "rand_sib", "ga_strata","IVH_first_final.factor") %>%
+    tbl_summary(by = nonrand_gp,
+      percent = "column",  # Show percentages by column for most variables
+      missing ="ifany", missing_text = "(Missing)",
+      digits = all_categorical() ~ c(0, 0),  # Precision for categorical variables
+      type = list(
+        sex.factor ~ "categorical",  
+        multi.factor ~ "categorical",
+        ga_calc ~ "continuous",
+        Birth_weight_Z ~ "continuous",
+        Birth_HC_Z ~ "continuous",
+        as1.new ~ "continuous",
+        as5.new ~ "continuous",
+        IVH_first_final.factor ~ "categorical",
+        all_categorical() ~ "categorical",  # Set all categorical as categorical
+        all_continuous() ~ "continuous"  # Set continuous variables
+      ),
+      statistic = list(
+        all_categorical() ~ "{n} / {N} ({p}%)",  # n/N (%) for categorical variables
+        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous
+       # PARTICIPANT ~ "{n}"  # No percentage for PARTICIPANT variable
+      ),
+      label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
+        PNA_rand ~ 'PNA at randomisation (hours)',
+        bw ~ 'Birth weight (g)', Birth_weight_Z ~ 'Birth weight Z-score',
+        b_hc ~ 'Birth head circumference (cm)',         
+        Birth_HC_Z ~ 'Birth head circumference Z-score', 
+        as1.new ~ 'APGAR score at 1 minute', 
+        as5.new ~ 'APGAR score at 5 minutes', 
+        cord_ph ~ 'Cord pH',
+        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+      ) 
+    ) %>%
+        modify_spanning_header(c("stat_1", "stat_2") ~ "**Siblings**") 
+  return(table_out_sibs)
+}
+
+table_demo_sibs(data_off_sibs)
+
+```
+
+
+## Offspring factors - Strata 2 - randomised and eligible for analysis
+
+```{r tab.cap="Offspring demographic characteristics - Strata 2", tab.cap.style = "Caption", tab.id = "T2", echo = F}
+data_off_rand2 <- data_off
+
+data_off_rand2$rand_gp.factor = factor(data_off$rand_gp, levels = c("0","1"), labels = c("Control", "Intervention"))
+
+table_demo2 <- function(data) {
+  
+  table_out2 <- data %>%
+    filter(rand_sib == 1) %>% 
+    filter(ga_strata == 2) %>%
+    dplyr::select("sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z","b_hc", 
+    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata","IVH_first_final.factor") %>%
+    tbl_summary(by = rand_gp,
+      percent = "column",  # Show percentages by column for most variables
+      missing ="ifany", missing_text = "(Missing)",
+      digits = all_categorical() ~ c(0, 0),  # Precision for categorical variables
+      type = list(
+        sex.factor ~ "categorical",  
+        multi.factor ~ "categorical",
+        ga_calc ~ "continuous",
+        Birth_weight_Z ~ "continuous",
+        Birth_HC_Z ~ "continuous",
+        as1.new ~ "continuous",
+        as5.new ~ "continuous",
+        IVH_first_final.factor ~ "categorical",
+        all_categorical() ~ "categorical",  # Set all categorical as categorical
+        all_continuous() ~ "continuous"  # Set continuous variables
+      ),
+      statistic = list(
+        all_categorical() ~ "{n} / {N} ({p}%)",  # n/N(%) for categorical variables
+        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous mean, sd, median
+       # PARTICIPANT ~ "{n}"  # No percentage for PARTICIPANT variable
+      ),
+      label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
+        PNA_rand ~ 'PNA at randomisation (hours)',
+        bw ~ 'Birth weight (g)', Birth_weight_Z ~ 'Birth weight Z-score',
+        b_hc ~ 'Birth head circumference (cm)',         
+        Birth_HC_Z ~ 'Birth head circumference Z-score', 
+        as1.new ~ 'APGAR score at 1 minute', 
+        as5.new ~ 'APGAR score at 5 minutes', 
+        cord_ph ~ 'Cord pH',
+        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+      ) 
+    ) %>%
+        modify_spanning_header(c("stat_1", "stat_2") ~ "**RandTwo**")
+    
+  return(table_out2)
+}
+
+table_demo2(data_off_rand2)
+```
+
+## ## Offspring factors - Strata 2 - siblings
+
+```{r tab.cap="Offspring demographic characteristics - Strata 2 - siblings", tab.cap.style = "Caption", tab.id = "T1", echo = F}
+
+data_off_sibs2 <- data_sib
+
+
+table_demo_sibs2 <- function(data) {
+  
+  table_out_sibs2 <- data %>%
+    filter(ga_strata == 2) %>%
+    dplyr::select("sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z","b_hc", 
+    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "nonrand_gp", "ga_strata","IVH_first_final.factor") %>%
+    tbl_summary(by = nonrand_gp,
+      percent = "column",  # Show percentages by column for most variables
+     missing ="ifany", missing_text = "(Missing)",
+      digits = all_categorical() ~ c(0, 0),  # Precision for categorical variables
+      type = list(
+        as1.new ~ "continuous",
+        as5.new ~ "continuous",
+        sex.factor ~ "categorical",  
+        multi.factor ~ "categorical",
+        ga_calc ~ "continuous",
+        Birth_weight_Z ~ "continuous",
+        Birth_HC_Z ~ "continuous",
+        IVH_first_final.factor ~ "categorical",
+        all_categorical() ~ "categorical",  # Set all categorical as categorical
+        all_continuous() ~ "continuous"  # Set continuous variables
+      ),
+      statistic = list(
+        all_categorical() ~ "{n} / {N} ({p}%)",  # n/N (%) for categorical variables
+        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous
+       
+      ),
+      label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
+        PNA_rand ~ 'PNA at randomisation (hours)',
+        bw ~ 'Birth weight (g)', Birth_weight_Z ~ 'Birth weight Z-score',
+        b_hc ~ 'Birth head circumference (cm)',         
+        Birth_HC_Z ~ 'Birth head circumference Z-score', 
+        as1.new ~ 'APGAR score at 1 minute', 
+        as5.new ~ 'APGAR score at 5 minutes', 
+        cord_ph ~ 'Cord pH',
+        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+      ) 
+    ) %>%
+        modify_spanning_header(c("stat_1", "stat_2") ~ "**SiblingsTwo**") 
+  return(table_out_sibs2)
+}
+
+table_demo_sibs2(data_off_sibs2)
+
+```
+
+## Maternal factors - Strata 1
+
+```{r tab.cap="Maternal demographic characteristics - Strata 1", tab.cap.style = "Caption", tab.id = "T4", echo=FALSE}
+
+# Function to generate a table for a specific brand
+table_demo_mat_1 <- function(data) {
+  
+  table_out_mat_1 <- data %>%
+    filter(rand_sib == 1) %>% 
+    filter(ga_strata == 1) %>%
+    dplyr::select("m_ethnic", "type1.factor", "type2.factor", "type3.factor", "type4.factor", "type5.factor","type6.factor", 
+    "type7.factor", "chorio.f.new", "ans.f.new", "rand_gp", "romdurn_hr_new", "ga_strata", "prom.factor", "delmode") %>%
+    tbl_summary(by = rand_gp,
+      percent = "column",  # Show percentages by column for most variables
+      missing ="ifany", missing_text = "(Missing)",
+      digits = all_categorical() ~ c(0, 0, 1),  # Precision for categorical variables
+      type = list(
+        m_ethnic ~ "categorical",  # Set PMH as categorical
+         type1.factor  ~ "categorical",
+        type2.factor  ~ "categorical",
+        type3.factor  ~ "categorical",
+        type4.factor  ~ "categorical",
+        type5.factor  ~ "categorical",
+        type6.factor  ~ "categorical",
+        type7.factor  ~ "categorical",
+        chorio.f.new ~ "categorical",
+        ans.f.new ~ "categorical",
+        prom.factor ~ "categorical",
+        romdurn_hr_new ~ "continuous",
+        delmode ~ "categorical",
+        all_categorical() ~ "categorical",  # Set all categorical as categorical
+        all_continuous() ~ "continuous"  # Set continuous variables
+      ),
+      statistic = list(
+        all_categorical() ~ "{n} / {N} ({p}%)",  # n/N (%) for categorical variables
+        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous mean, sd, median
+      ),
+      label = list(m_ethnic ~ 'Ethnicity', chorio.f.new ~ "Chorioamnionitis", 
+                   type1.factor  ~ "Hypertension",
+                   type2.factor  ~ "Asthma",
+                   type3.factor  ~ "Diabetes",
+                   type4.factor  ~ "Hyperthyroidism",
+                   type5.factor  ~ "Hypothyroidism",
+                   type6.factor  ~ "Epilepsy",
+                   type7.factor  ~ "Other",
+                   ans.f.new ~ "Use of antenatal steroids",
+                   prom.factor ~ 'Premature rupture of membranes',
+                   romdurn_hr_new ~ 'Time between PROM and birth (h)',
+                   delmode ~ 'Mode of delivery'
+      )
+    ) 
+  return(table_out_mat_1)
+}
+
+table_demo_mat_1(data)
+
+```
+
+\newpage
+## Maternal factors - Strata 2
+
+```{r tab.cap="Maternal demographic characteristics - Strata 2", tab.cap.style = "Caption", tab.id = "T5", echo=FALSE}
+
+# Function to generate a table for a specific brand
+table_demo_mat <- function(data) {
+  
+  table_out_mat <- data %>%
+    filter(rand_sib == 1) %>% 
+    filter(ga_strata == 2) %>%
+    dplyr::select("m_ethnic", "type1.factor", "type2.factor", "type3.factor", "type4.factor", "type5.factor","type6.factor", 
+    "type7.factor", "chorio.f.new", "ans.f.new", "rand_gp", "romdurn_hr_new", "ga_strata", "prom.factor", "delmode") %>%
+    tbl_summary(by = rand_gp,
+      percent = "column",  # Show percentages by column for most variables
+      missing ="ifany", missing_text = "(Missing)",
+      digits = all_categorical() ~ c(0, 0, 1),  # Precision for categorical variables
+      type = list(
+        m_ethnic ~ "categorical",  # Set PMH as categorical
+        type1.factor  ~ "categorical",
+        type2.factor  ~ "categorical",
+        type3.factor  ~ "categorical",
+        type4.factor  ~ "categorical",
+        type5.factor  ~ "categorical",
+        type6.factor  ~ "categorical",
+        type7.factor  ~ "categorical",
+        chorio.f.new ~ "categorical",
+        ans.f.new ~ "categorical",
+        prom.factor ~ "categorical",
+        romdurn_hr_new ~ "continuous",
+        delmode ~ "categorical",
+        all_categorical() ~ "categorical",  # Set all categorical as categorical
+        all_continuous() ~ "continuous"  # Set continuous variables
+      ),
+      statistic = list(
+        all_categorical() ~ "{n} / {N} ({p}%)",  # n/N (%) for categorical variables
+        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous mean, sd, median
+      ),
+      label = list(m_ethnic ~ 'Ethnicity', chorio.f.new ~ "Chorioamnionitis", 
+                   type1.factor  ~ "Hypertension",
+                   type2.factor  ~ "Asthma",
+                   type3.factor  ~ "Diabetes",
+                   type4.factor  ~ "Hyperthyroidism",
+                   type5.factor  ~ "Hypothyroidism",
+                   type6.factor  ~ "Epilepsy",
+                   type7.factor  ~ "Other",
+                   ans.f.new ~ "Use of antenatal steroids",
+                   prom.factor ~ 'Premature rupture of membranes',
+                   romdurn_hr_new ~ 'Time between PROM and birth (h)',
+                   delmode ~ 'Mode of delivery'
+      )
+    ) 
+  return(table_out_mat)
+}
+
+
+
+table_demo_mat(data)
+
+```
