@@ -1,0 +1,575 @@
+---
+title: "CD_Tables_Doc"
+author: "Evelyn Tay"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(broom)
+library(gt)
+library(gtsummary)
+library(stringr)
+library(officedown)
+library(tidyverse)
+library(kableExtra)
+library(tidyr)
+library(MASS)
+
+
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v0.9.csv", stringsAsFactors = FALSE, header = TRUE)
+
+
+data_raw <- data_raw %>%
+   mutate(nonrand_gp = case_when(study_id == "CD-04011" ~ 1, .default = nonrand_gp)) #intervention
+
+#temp line as this will be changed in the database
+data_raw$romdtm[which(data_raw$study_id == "CD-03020")] <- "2025-10-28 10:26:00"
+
+#death <=36w
+possible_formats <- c("dmy", "ymd", "mdy", "dmy HMS", "ymd HMS", "ymd HM")
+
+
+data <- data_raw %>%
+  mutate(Birth_weight_Z = as.numeric(Birth_weight_Z),
+         BWZ_cat = case_when(Birth_weight_Z < -1 ~ 1, 
+                             Birth_weight_Z >= -1 ~ 0,
+                             .default = Birth_weight_Z),
+         BWZ_cat.f = as.factor(BWZ_cat),
+         Birth_HC_Z = as.numeric(Birth_HC_Z),
+         wpma36_weight_Z = as.numeric(wpma36_weight_Z),
+         wpma36_HC_Z = as.numeric(wpma36_HC_Z),
+         wpma36_length_Z = as.numeric(wpma36_length_Z),
+         wpma36_weight_zdiff = wpma36_weight_Z - Birth_weight_Z,
+         oxygen_supplementation_duration = as.numeric(oxygen_supplementation_duration),
+         spo2_24av = as.numeric(spo2_24av),
+         b_hc = as.numeric(b_hc),
+         rand_gp = case_when(study_id == "CD-04011" ~ 1, .default = rand_gp),
+         rand_gp = case_when(rand_gp == 2 ~ 0, .default = rand_gp),
+         nonrand_gp = case_when(nonrand_gp == 2 ~ 0, .default = nonrand_gp),
+         ans.f = case_when(ans == "" ~ "1",ans == "NI" ~ "1",ans == "0" ~ "1", .default = ans),
+         ans.factor = factor(ans.f, levels = c("3", "1", "2", "4")),
+         recr_hosp = case_when(recr_hosp == 13 ~ 1, .default = recr_hosp),
+         recr_hosp.factor = factor(recr_hosp),
+         recr_hosp.factor = fct_relevel(recr_hosp.factor, "1", "4","2","5","6","7","9","10","11","14","3"),
+         ga_strata.f = ga_strata - 1, #Strata 0 = <28weeks, #Strata 1 = 28-32 Weeks
+         IVH = case_when(IVH == 5 ~ 4, .default = IVH),
+         IVH = case_when(study_id == "CD-02019" ~ 4, .default = IVH),
+         IVH.factor = as.factor(IVH),
+         rop = case_when(rop == "5" ~ "0", rop == "NI" ~ "0", rop == "UNK" ~ NA,rop == "" ~ NA, .default = rop),
+         rop_plus_yn1 = case_when(rop == "0" ~ "0", rop == "5" ~ "0",  rop == "NI" ~ "0",
+                                  rop_plus_yn == "NI" ~ "0", rop_plus_yn == "UNK" ~ "0", .default = rop_plus_yn),
+         roprx1 = case_when(rop == "0" ~ "0", rop == "5" ~ "0", .default = roprx),
+         BPD_any = case_when(BPD == 0 ~ 0, 
+                             BPD > 0 ~ 1, 
+                             is.na(BPD) & death_36wpma == 1 ~ 0,
+                             is.na(BPD) & withdraw_36wpma == 1 ~ NA,
+                             is.na(BPD) ~ NA), 
+         nec_2 = case_when(necstage %in% c("2","3") ~ "1",
+                           necstage == "1" ~ "0", necstage == "" ~ "0", 
+                           necstage == "NI" ~ "0", is.na(necstage) ~ "0",
+                           is.na(necstage) & death_44wpma == 1 ~ "0",
+                           is.na(necstage) & withdraw_44wpma == 1 ~ NA,
+                           is.na(necstage) & withdraw_dcg == 1 ~ NA, #wd before dg from hosp
+                          .default = "0"),
+         nec_2 = as.numeric(nec_2),
+         ROP_2plus = case_when(rop %in% c("3","4") ~ 1,
+                               rop == "2" & rop_plus_yn == 1 ~ 1,
+                               is.na(rop) & death_44wpma == 1 ~ 0,
+                               is.na(rop) & withdraw_dcg ~ NA,
+                              .default = 0),
+         ROP_2plus = as.numeric(ROP_2plus),
+         sepsis_count = case_when(death_44wpma != 1 & !is.na(sepsis_proven_no) ~ sepsis_proven_no,
+                                  death_44wpma == 1 & is.na(sepsis_proven_no) ~ 0,
+                                  withdraw_44wpma == 1 ~ NA,
+                                  is.na(sepsis_proven_yn) ~ 0,
+                                  .default = sepsis_proven_no),
+         PVL = case_when(IVH == "-Inf" ~ NA, .default = PVL),
+        GMA.f  = case_when(GMA == -1 ~ " Assessors disagreed",
+                           GMA == 1 ~ "Not at risk",
+                           GMA == 2 ~ "At risk",
+                           GMA == 10 ~ "Video not assessed",
+                           is.na(GMA) ~ "Missing",
+                           .default = "Missing"),
+        rand.dfor      = as.Date(parse_date_time(rand_dtm, orders = possible_formats)),
+         dob.dfor       = as.Date(parse_date_time(dob, orders = possible_formats)),
+         wd.dfor        = as.Date(parse_date_time(withdraw_dt, orders = possible_formats)),
+         dischhome.dfor = as.Date(parse_date_time(dischhome_dtm, orders = possible_formats)),
+         lastresp.dfor = as.Date(parse_date_time(lastrespsupp_dtm, orders = possible_formats)),
+         dcgdtm.dfor    = as.Date(parse_date_time(dcgdtm, orders = possible_formats)),
+         rand.dfor.correct = case_when(difftime(rand.dfor, dob.dfor, units = "weeks") < 4 ~ rand.dfor,
+                           .default = as.Date(parse_date_time(enrol_dtm, orders = possible_formats))),
+          entry_time_pma = ga_calc + difftime(rand.dfor.correct, dob.dfor, units = "weeks"),
+          skin_damage = case_when(ae_yn == 1 ~ 1,
+                                 .default = 0),
+        date_42wpma = as.Date(date_36wpma) + weeks(6),
+         date_44wpma = as.Date(date_36wpma) + weeks(8),
+         date_52wpma = as.Date(date_36wpma) + weeks(16),
+         wd_1 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt) < as.Date(date_36wpma)) ~ 1, .default = 0),
+         dth_1 = case_when(dth_yn == 1 & (as.Date(dth_dtm) < as.Date(date_36wpma)) ~ 1, .default = 0),
+         LKA_1 = case_when(is.na(death_36wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0),
+         wk36_present = case_when(wd_1 == 1 | dth_1 == 1 | LKA_1 == 1 ~ 0, .default = 1),
+         wd_3 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_44wpma ~ 1, .default = 0),
+        dth_3 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_44wpma ~ 1, .default = 0),
+        LKA_3 = case_when(is.na(death_44wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0),
+        wk44_present = case_when(wd_3 == 1 | dth_3 == 1 | LKA_3 == 1 ~ 0, .default = 1),
+        PVL_prior  = as.factor(PVL_first_final),
+        IVH_prior = as.factor(IVH_first_final),
+        #romdurn_calc = as.POSIXct(b_dtm, format ="%Y-%m-%d %H:%M:$S") - as.POSIXct(romdtm, format ="%Y-%m-%d %H:%M:$S")
+        romdurn_hr = round(as.numeric(difftime(ymd_hms(romdtm),ymd_hms(b_dtm), units = "hours")),1),
+        romdurn_hr_new = case_when(romdurn_hr > 0 & romdurn_hr < 24 ~ 0, .default = romdurn_hr),
+        romdurn_day = round(as.numeric(difftime(ymd_hms(romdtm),ymd_hms(b_dtm), units = "days")),1)
+         #do the same for 44wk and 52 wk
+         )
+
+data_elig <- data %>%
+  filter(rand_sib == 1)
+
+data_sib <- data %>%
+  filter(rand_sib == 0)
+
+###################data for the tables in Estimand 11,12 and 13
+
+data_10_elig <- data_elig %>%
+  mutate(
+        rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
+         ) 
+       
+
+data_10_sib <- data_sib %>%
+  mutate(
+        nonrand_gp = factor(nonrand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
+         ) 
+
+       
+
+```
+
+#Right shift of the SpO2/PiO2 curve at 36.0 w PMA
+## Randomised
+
+```{r Estimand_S10_rand, echo=FALSE, message = FALSE, warning = FALSE}
+## the right shift of the SpO2/PiO2 curve at 36.0 w PMA.****
+#Participants and allocated siblings from multiple births
+
+shift.strata <- data_10_elig |>
+  dplyr::select(ga_strata, rand_gp, Shift..kPa.) |>
+  mutate(strata = case_when(ga_strata == "1" ~ "<28 weeks",
+                            ga_strata == "2" ~ "28 to <32 weeks",
+                            .default = "Unknown strata")) |>
+  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata"))) |>
+  tbl_strata(
+    strata = strata,
+    .tbl_fun =
+      ~ .x |>
+      tbl_summary(by = rand_gp,
+                  statistic = all_continuous() ~ "{median} ({p25},{p75})",
+                  digits = all_continuous() ~ 2,
+                  label = list(Shift..kPa. = "Right shift (kPa)"),
+                  missing_text = "(Missing)") |>
+      # RIGHT WAY TO UPDATE HEADERS:
+      # This updates the treatment column headers (e.g., Control and Intervention)
+      modify_header(all_stat_cols() ~ "**{level}**, N = {n}") 
+  ) |>
+  modify_caption("**Table 1.** Summary of shift of the SpO2/PIO2 curve (kPa) at 36.0wks PMA stratified by gestational age among the randomised participants.")
+
+
+shift.strata
+
+
+
+## Unadjusted median (with 25th and 75th percentiles) for intervention and control groups by randomisation status and prematurity strata - table
+```
+
+##Siblings
+
+```{r Estimand_S10_nonrand, echo=FALSE, message = FALSE, warning = FALSE}
+## the right shift of the SpO2/PiO2 curve at 36.0 w PMA.****
+#Participants and allocated siblings from multiple births
+
+
+library(dplyr)
+library(gtsummary)
+
+shift.strata.nonrand <- data_10_sib |>
+  dplyr::select(ga_strata, nonrand_gp, Shift..kPa.) |>
+  mutate(
+    strata = case_when(
+      ga_strata == "1" ~ "<28 weeks",
+      ga_strata == "2" ~ "28 to <32 weeks",
+      .default = "Unknown strata"
+    ),
+    strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata"))
+  ) |> # Changed from %>% to |> for consistency
+  tbl_strata(
+    strata = strata,
+    .tbl_fun = function(x) { # Explicitly declare the dataframe input
+      x |>
+        tbl_summary(
+          by = nonrand_gp,
+          type = list(Shift..kPa. ~ "continuous"),
+          statistic = all_continuous() ~ "{median} ({p25}, {p75})",
+          digits = all_continuous() ~ 2,
+          label = list(Shift..kPa. ~ "Right shift (kPa)"), # Fixed = to ~ for label mapping
+          missing_text = "(Missing)"
+        ) |>
+        modify_header(all_stat_cols() ~ "**{level}**, N = {n}")
+    }
+  ) |>
+  modify_caption("**Table 2.** Summary of shift of the SpO2/PIO2 curve (kPa) at 36.0wks PMA stratified by gestational age among the siblings.")
+
+shift.strata.nonrand
+## Unadjusted median (with 25th and 75th percentiles) for intervention and control groups by randomisation status and prematurity strata - table
+```
+
+\newpage
+
+\newpage
+#SAFETY OUTCOMES
+
+```{r Estimand_S9_S16_S17_rand, echo=FALSE, message = FALSE, warning = FALSE}
+## grade III/IV intraventricular haemorrhage (IVH) and PVL at ≤36.0 w PMA (PVL as well)
+## severity of BDP at 36 wk - Estimand S9
+
+#Randomised trial eligible participants and allocated siblings from multi births
+#Setting Factors(will create new variable for factors)
+
+data_elig_AE_rand <- data_elig %>%
+  mutate(rand_gp = factor(rand_gp, levels = c ("0","1"), labels = c("Control", "Intervention")),
+         PVL = factor(PVL, c("0","1")),
+         BPD = factor(data_elig$BPD, levels = c("0","1","2","3")),
+         IVH = factor(data_elig$IVH, levels = c("0","1","2","3","4")))
+
+
+# 1. Prepare data with safe factor levels
+data_prep <- data_elig_AE_rand |> 
+  #filter(wk36_present == 1) %>%
+  dplyr::select(ga_strata, rand_gp, IVH, PVL, BPD) |> 
+  mutate(
+    strata_gp = case_when(
+      ga_strata == 1 ~ "<28 weeks", 
+      ga_strata == 2 ~ "28 to <32 weeks", 
+      .default = "Unknown strata"
+    ),
+    strata_gp = factor(strata_gp, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata"))
+  )
+
+outcomes <- c("IVH", "PVL", "BPD")
+
+# 2. Map over each outcome, using tbl_strata to safely partition the data rows
+table_list <- map(outcomes, function(var) {
+  
+  # Set up a direct named list for the specific label column
+  lbl_list <- list(var)
+  names(lbl_list) <- var
+  
+  data_prep |>
+    dplyr::select(rand_gp, strata_gp, all_of(var)) |>
+    tbl_strata(
+      strata = strata_gp,
+      .combine_with = "tbl_stack",
+      .tbl_fun = ~ .x |> 
+        tbl_summary(
+          by = rand_gp, 
+          statistic = all_categorical() ~ "{n} / {N} ({p}%)", 
+          digits = all_continuous() ~ 0, 
+          label = lbl_list,                      
+          missing_text = "(Missing)"
+        ) |> 
+        add_n(),
+      .header = "{strata}" # This prints the strata label right in the row divider line
+    )
+})
+
+# 3. Stack the primary outcome blocks together
+# Because tbl_strata already handles stratum headers, we map the macro headers here
+ae1.strata.elig <- tbl_stack(
+  table_list, 
+  group_header = outcomes
+) |>
+  modify_caption("**Table 8.** Summary of neonatal morbidities by intervention group and strata among the randomised participants.")
+ae1.strata.elig
+##add a footnote about those present before randomisation
+
+
+## Frequency (%) for each category of severity for intervention and control groups by randomisation status and prematurity strata and whether it was present prior to
+#randomisation - table
+```
+
+\newpage
+
+```{r Estimand_S16_S17_prerand, echo=FALSE, message = FALSE, warning = FALSE}
+
+###change this table into footnotes
+
+
+## grade III/IV intraventricular haemorrhage (IVH) and PVL at ≤36.0 w PMA (PVL as well)
+## severity of BDP at 36 wk - est9
+
+#Randomised trial eligible participants and allocated siblings from multi births
+#Setting Factors(will create new variable for factors)
+
+data_prerand <- data_elig %>%
+  mutate(PVL_prior = factor(data_elig$PVL_first_final, levels = c("0","1")),
+         IVH_prior = factor(data_elig$IVH_first_final, levels = c("0","1","2","3","4")))
+
+
+# 1. Prepare data with safe factor levels
+data_prep <- data_prerand |> 
+  #filter(wk36_present == 1) |> 
+  dplyr::select(ga_strata, rand_gp, IVH_prior, PVL_prior) |> 
+  mutate(
+    strata_gp = case_when(
+      ga_strata == 1 ~ "<28 weeks", 
+      ga_strata == 2 ~ "28 to <32 weeks", 
+      .default = "Unknown strata"
+    ),
+    strata_gp = factor(strata_gp, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata"))
+  )
+
+outcomes <- c("IVH_prior", "PVL_prior")
+
+# 2. Map over each outcome, using tbl_strata to safely partition the data rows
+table_list <- map(outcomes, function(var) {
+  
+  # Set up a direct named list for the specific label column
+  lbl_list <- list(var)
+  names(lbl_list) <- var
+  
+  data_prep |>
+    dplyr::select(rand_gp, strata_gp, all_of(var)) |>
+    tbl_strata(
+      strata = strata_gp,
+      .combine_with = "tbl_stack",
+      .tbl_fun = ~ .x |> 
+        tbl_summary(
+          by = rand_gp, 
+          statistic = all_categorical() ~ "{n} / {N} ({p}%)", 
+          digits = all_continuous() ~ 0, 
+          label = lbl_list,                      
+          missing_text = "(Missing)"
+        ) |> 
+        add_n(),
+      .header = "{strata}" # This prints the strata label right in the row divider line
+    )
+})
+
+# 3. Stack the primary outcome blocks together
+# Because tbl_strata already handles stratum headers, we map the macro headers here
+ae1.strata.elig.prior <- tbl_stack(
+  table_list, 
+  group_header = outcomes
+) |> 
+  modify_caption("**Table 8a.** THis table will be footnote.")
+ae1.strata.elig.prior
+##add a footnote about those present before randomisation
+
+
+## Frequency (%) for each category of severity for intervention and control groups by randomisation status and prematurity strata and whether it was present prior to
+#randomisation - table
+```
+
+\newpage
+
+```{r Estimand_S9_S16_S17_sib, echo=FALSE, message = FALSE, warning = FALSE}
+## grade III/IV intraventricular haemorrhage (IVH) and PVL at ≤36.0 w PMA (PVL as well)
+## severity of BDP at 36 wk - est9
+
+#Randomised trial eligible participants and allocated siblings from multi births
+#Setting Factors(will create new variable for factors)
+data_sib2 <- data_sib %>%
+  mutate(nonrand_gp = factor(nonrand_gp, levels = c ("0","1"), labels = c("Control", "Intervention")),
+         PVL = factor(PVL, c("0","1")),
+         BPD = factor(data_sib$BPD, levels = c("0","1","2","3")),
+         IVH = factor(data_sib$IVH, levels = c("0","1","2","3","4")))
+
+
+# 1. Prepare data with safe factor levels
+data_prep2 <- data_sib2 |> 
+  #filter(wk36_present == 1) |>
+  dplyr::select(ga_strata, nonrand_gp, IVH, PVL, BPD) |> 
+  mutate(
+    strata_gp = case_when(
+      ga_strata == 1 ~ "<28 weeks", 
+      ga_strata == 2 ~ "28 to <32 weeks", 
+      .default = "Unknown strata"
+    ),
+    strata_gp = factor(strata_gp, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata"))
+  )
+
+outcomes <- c("IVH", "PVL", "BPD")
+
+# 2. Map over each outcome, using tbl_strata to safely partition the data rows
+table_list <- map(outcomes, function(var) {
+  
+  # Set up a direct named list for the specific label column
+  lbl_list <- list(var)
+  names(lbl_list) <- var
+  
+  data_prep2 |>
+    dplyr::select(nonrand_gp, strata_gp, all_of(var)) |>
+    tbl_strata(
+      strata = strata_gp,
+      .combine_with = "tbl_stack",
+      .tbl_fun = ~ .x |> 
+        tbl_summary(
+          by = nonrand_gp, 
+          statistic = all_categorical() ~ "{n} / {N} ({p}%)", 
+          digits = all_continuous() ~ 0, 
+          label = lbl_list,                      
+          missing_text = "(Missing)"
+        ) |> 
+        add_n(),
+      .header = "{strata}" # This prints the strata label right in the row divider line
+    )
+})
+
+# 3. Stack the primary outcome blocks together
+# Because tbl_strata already handles stratum headers, we map the macro headers here
+ae1.strata.sib <- tbl_stack(
+  table_list, 
+  group_header = outcomes
+) |>
+  modify_caption("**Table 9.** Summary of study neonatal morbidities by intervention group and strata among the siblings.")
+
+ae1.strata.sib
+```
+
+\newpage
+
+```{r Estimand_S19_rand, echo=FALSE, message = FALSE, warning = FALSE}
+##  risk for cerebral palsy (CP) on General Movements Assessment (GMA) at 36.0 w PMA.
+#Randomised trial eligble participamts
+
+cp.risk.rand <- data_19_elig |>
+dplyr::select(ga_strata, rand_gp, GMA.f) |>
+mutate(strata = case_when(ga_strata == "1" ~ "<28 weeks",
+ga_strata == "2" ~ "28 to <32 weeks",
+.default = "Unknown strata")) %>%
+mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))|>
+tbl_strata(
+strata = strata,
+.tbl_fun =
+~ .x |>
+tbl_summary(by = rand_gp,
+statistic = list(
+all_categorical() ~ "{n} / {N} ({p}%)"
+),
+label = list(GMA.f = "Assessment of risk of cerebral palsy"),
+missing_text = "(Missing)") |>
+add_n(),
+# This automatically sets the spanning header above Control & Intervention to the dynamic Strata name
+.header = "**{strata}**, N = {n}"
+) |>
+modify_caption("**Table 10.** Risk of cerebral palsy on General Movements Assessment (GMA) at 36.0wk PMA by intervention and strata.")
+
+cp.risk.rand
+
+```
+
+
+\newpage
+#ESTIMAND 20 - study related adverse events
+
+```{r Estimand_S20, echo=FALSE, message = FALSE, warning = FALSE, results = 'asis'}
+##  study related adverse events prior to initial discharge home.
+##Study related adverse event of (i) retinopathy of prematurity with a Stage III or
+#greater, or Stage II with Plus disease on ICROP3, 
+#(ii) skin damage from use of wearables, and 
+#(iii)
+#any perceived safety issue associated with the intervention devices, up to date of death, discharge
+#home from hospital, or 44.0 w PMA, whichever occurs first for each participant
+
+#Randomised trial eligible participants up to date of death, discharge home from hospital, or 44.0 w PMA, whichever occurs first ie ALL of them in data_elig (N = 744)
+
+##  Frequencies (%) for intervention and control groups by strata
+
+data_elig_20 <- data_elig %>%
+  mutate(ROP_2plus = factor(ROP_2plus, levels = c(0,1)),
+         ae_yn.factor = factor(ae_yn, levels = c("0","1")),
+         skin_damage = case_when(is.na(ae_yn.factor) ~ "0", TRUE ~ ae_yn.factor))
+         
+
+
+
+ae.strata <- data_elig_20 |>
+  dplyr::select(ga_strata, rand_gp, ROP_2plus, skin_damage) |>
+  mutate(strata1 = case_when(ga_strata == "1" ~ "<28 weeks",
+                            ga_strata == "2" ~ "28 to <32 weeks",
+                            .default = "Unknown strata")) %>%
+  mutate(strata1 = factor(strata1, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))|>
+  dplyr::select(-ga_strata) |>
+  tbl_strata(
+    strata = strata1,
+    .tbl_fun =
+      ~ .x |>
+      tbl_summary(by = rand_gp,
+                  statistic = list(
+                    all_continuous() ~ "{median} ({p25},{p75})",
+                    all_categorical() ~ "{n} / {N} ({p}%)"
+                  ),
+                  digits = all_continuous() ~ 0,
+                  missing = "ifany",
+                  label = list(ROP_2plus = "ROP - Stage III or greater or Stage II plus disease",
+                               skin_damage = "Skin damage from wearables")
+                  ) |>
+      add_n(),
+    .header = "**{strata}**, N = {n}"
+  ) |>
+  modify_caption("**Table 10.** Summary of study related adverse events by intervention group and strata.")
+
+
+ae.strata
+
+```
+
+\newpage
+#ESTIMAND 21 - Serious study-related adverse events
+
+
+```{r Estimand_S21, echo=FALSE, message = FALSE, warning = FALSE,results = 'asis'}
+##  study related serious adverse events prior to initial discharge home.
+##Study related adverse event of (i) retinopathy of prematurity with a Stage III or
+# (i) death before discharge home from hospital deemed potentially associated with the intervention and
+# (ii) any perceived life-threatening event during hospitalisation associated with the intervention devices, up to date of death, discharge home from hospital, or 44.0 w PMA
+
+#Randomised trial eligible participants up to date of death, discharge home from hospital, or 44.0 w PMA, whichever occurs first ie ALL of them in data_elig
+
+##  Frequencies (%) for intervention and control groups by strata
+
+####
+
+data_elig_21 <- data_elig 
+
+sae.strata <- data_elig_21 |>
+  dplyr::select(ga_strata, rand_gp, dth_yn) |>
+  mutate(strata = case_when(ga_strata == "1" ~ "<28 weeks",
+                            ga_strata == "2" ~ "28 to <32 weeks",,
+                            .default = "Unknown strata")) %>%
+  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))|>
+  tbl_strata(
+    strata = strata,
+    .tbl_fun =
+      ~ .x |>
+      tbl_summary(by = rand_gp,
+                  statistic = list(
+                    all_continuous() ~ "{median} ({p25},{p75})",
+                    all_categorical() ~ "{n} / {N} ({p}%)"
+                  ),
+                  digits = all_continuous() ~ 0,
+                  label = list(dth_yn = "Death", rop = "ROP",
+                               rop_plus_yn1 = "ROP plus Disease",
+                               roprx1 = "ROP plus Surgery"),
+                  missing_text = "(Missing)") |>
+      add_n(),
+    .header = "*SAE*, N = {n}"
+  ) |>
+  modify_caption("**Table 10.** Summary of serious study related adverse events by intervention group and strata.")
+
+sae.strata
+
+
+```
