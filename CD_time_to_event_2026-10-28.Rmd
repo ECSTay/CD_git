@@ -185,8 +185,7 @@ add_rcs_splines <- function(data, x_var, probs = c(0.1, 0.4, 0.6, 0.9)) {
 #during hospital stay will be censored at 52.0 weeks PMA
 
 data_S6 <- data_elig %>%
-  dplyr::select(study_id, rand.dfor.correct, dth_yn, dob.dfor, wd.dfor, dcgdtm.dfor, ga_calc, death_52wpma, recr_hosp.factor, ga_strata.f,
-                withdraw_52wpma, Birth_weight_Z, rand_gp, multiple, ans.factor, sex) %>%
+  dplyr::select(study_id, rand.dfor.correct, dth_yn, dob.dfor, wd.dfor, dcgdtm.dfor, ga_calc, death_52wpma, recr_hosp.factor, ga_strata.f, withdraw_52wpma, Birth_weight_Z, rand_gp, multiple, ans.factor, sex) %>%
   mutate(
     # 1. Calculate the difference between two dates in weeks
     chron_age_rand = as.numeric(difftime(rand.dfor.correct, dob.dfor, units = "weeks")),
@@ -217,13 +216,13 @@ data_S6 <- data_elig %>%
                          .default = NA
                          )
   ) %>%
-  tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex,recr_hosp.factor) 
-data_S6 <- data_S6 %>%
+  tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex,recr_hosp.factor) %>%
+  mutate(exit_pma = ifelse(exit_pma - entry_pma == 0, exit_pma + 0.01, exit_pma)) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
 
 
 fit_S6 <- coxph(Surv(time = entry_pma, time2 = exit_pma, event = discharged_52pma) ~ rand_gp + multiple + ans.factor + ga_strata.f + sex + strata(recr_hosp.factor) + Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3, 
-                data = data_S6[which(data_S6$exit_pma > data_S6$entry_pma),])
+                data = data_S6[which(!is.na(data_S6$discharged_52pma)),])
 fit_summary_6 <- summary(fit_S6)
 
 # Marginal effects: risk
@@ -471,12 +470,14 @@ plot6 <- ggplot(curve_data6, aes(x = time, y = cum_discharge, color = rand_gp, f
   # Minimalist Journal Theme Overrides (Nature/Elsevier Standard)
   theme_classic(base_size = 14) +
   theme(
-    axis.text          = element_text(color = "black"),
+    axis.text          = element_text(color = "black", size = 18),
+    axis.title         = element_text(face = "bold", size = 18), 
     legend.position    = "bottom",
+    legend.text        = element_text(size = 20),
     legend.title       = element_blank(),                       
     legend.background  = element_blank(),
     strip.background   = element_rect(fill = "#F2F2F2", color = NA), 
-    strip.text         = element_text(face = "bold", size = 13, color = "black"), 
+    strip.text         = element_text(face = "bold", size = 20, color = "black"), 
     panel.spacing      = unit(1.5, "lines") 
   )
 
@@ -515,12 +516,6 @@ The intervention group was discharged from a tertiary hospital at a median time 
 ## total duration of hospital (tertiary and Level 2) stay prior to discharge home alive for participants who survive to 52.0 w PMA, censored at 52.0 w PMA****
 
 
-#Missing date of discharge from tertiary hospital due to IE.3 or IE.4 will be censored at the date of withdrawal or
-#date of last known contact with research staff. Missing date of discharge alive due to death (IE.7)
-#during hospital stay will be censored at 52.0 weeks PMA
-
-#CD died in hospital after the age of 52wk PMA
-
 
 data_S7 <- data_elig %>%
   dplyr::select(study_id, rand.dfor.correct, dob.dfor, BWZ_cat.f, Birth_weight_Z, BWZ_bin, wd.dfor,dischhome.dfor,ga_calc,death_52wpma, recr_hosp.factor, ga_strata.f, withdraw_52wpma, rand_gp, multiple, ans.factor, sex) %>%
@@ -556,14 +551,20 @@ data_S7 <- data_elig %>%
                          )) %>%
     #5. exclude the rows with missing
     tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, BWZ_cat.f, sex, recr_hosp.factor,
-                   entry_pma, exit_pma,discharged_52pma) 
+                   entry_pma, exit_pma,discharged_52pma) %>%
+     mutate(exit_pma = ifelse(exit_pma - entry_pma == 0, exit_pma + 0.01, exit_pma))
   
 
 fit_S7 <- coxph( Surv(entry_pma, exit_pma, discharged_52pma) ~ rand_gp + multiple + ans.factor + strata(ga_strata.f) + sex + strata(recr_hosp.factor) + strata(BWZ_cat.f), 
-                 data = data_S7[which(data_S7$exit_pma > data_S7$entry_pma),])
+                 data = data_S7)
 
 
 fit_summary_7 <- summary(fit_S7)
+
+ph_test_7 <- cox.zph(fit_S7)
+
+print("--- PROPORTIONAL HAZARDS TEST ---")
+print(ph_test_7)
 
     # Marginal effects: risk
 #S7_risk_marginal <- avg_comparisons(fit_S7, variables = "rand_gp", type = "risk", vcov = "fwb", R = 1000)
@@ -775,7 +776,7 @@ plot7 <- ggplot(curve_data, aes(x = time, y = cum_discharge, color = rand_gp, fi
   # Labels and Structural Typography (titles removed from scale arguments)
   labs(
     x = "Weeks PMA",
-    y = "Cumulative Probability of Discharge",
+    y = "Cumulative Probability of Discharge (%)",
     color = NULL,
     fill  = NULL
   ) +
@@ -783,13 +784,15 @@ plot7 <- ggplot(curve_data, aes(x = time, y = cum_discharge, color = rand_gp, fi
   # Minimalist Journal Theme Overrides (Nature/Elsevier Standard)
   theme_classic(base_size = 14) +
   theme(
-    axis.text          = element_text(color = "black"),
+    axis.text          = element_text(color = "black", size = 18),
+    axis.title         = element_text(face = "bold", size = 18), 
     legend.position    = "bottom",
-    legend.title       = element_blank(),                       # Removes the legend header completely
+    legend.text        = element_text(size = 20),
+    legend.title       = element_blank(),                       
     legend.background  = element_blank(),
-    strip.background   = element_rect(fill = "#F2F2F2", color = NA), # Soft banner header background
-    strip.text         = element_text(face = "bold", size = 13, color = "black"), # Bold clinical labels
-    panel.spacing      = unit(1.5, "lines") # Visual breathing room between plots
+    strip.background   = element_rect(fill = "#F2F2F2", color = NA), 
+    strip.text         = element_text(face = "bold", size = 20, color = "black"), 
+    panel.spacing      = unit(1.5, "lines") 
   )
 print(plot7)
 # ggsave(
