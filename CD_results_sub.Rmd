@@ -175,12 +175,10 @@ add_rcs_splines <- function(data, x_var, probs = c(0.1, 0.4, 0.6, 0.9)) {
 # S1: Survival at 36.0 w PMA (logistic regression model)
 
 ```{r Estimand_S1, echo=FALSE, message = FALSE, warning = FALSE}
-# To evaluate the effect of randomisation to intervention compared to standard of care on
+
 # survival to 36.0 w PMA
 #Sens analysis 1) replace all missing wiht alive 2) replace all missing with death
-#table(data$surv,exclude = NULL)#
 
-#use the <= 36wPMA death variable #666 NA = 68
 
 data_S1 <- data_elig %>%
   filter(wk36_present == 1) %>% #680
@@ -310,8 +308,6 @@ results_2 <- results_2 %>%
 rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
 print(results_2)
 
-
-
 ```
 The data for this estimand includes those participants known to survive until 36.0 weeks PMA (n = 680). 8 were missing their standardised weight Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window and 6 were discharged to secondary hospitals before 36.0 weeks PMA. The weight Z-scores of these 8 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
 
@@ -387,7 +383,6 @@ results_3<- data.frame(
   marg_Upper_95_CI = round(pooled_marginal_effects$conf.high[9], digits = 2),
   p_value = round(pooled_marginal_effects$p.value[9], digits = 3)
 )
-
 
 results_3 <- results_3 %>%
 rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
