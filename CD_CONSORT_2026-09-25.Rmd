@@ -1,0 +1,279 @@
+---
+title: "CD STA CONSORT"
+author: "Evelyn Tay"
+date: "2026-09-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(gt)
+library(gtsummary)
+library(stringr)
+library(officedown)
+library(tidyverse)
+library(kableExtra)
+library(logbin)
+library(Amelia)
+library(lubridate)
+library(parsnip)
+library(censored)
+library(broom)
+library(rms)
+library(mice)
+library(survRM2)
+library(lmtest)
+library(survminer)
+library(dplyr)
+library(tidyr)
+library(Hmisc)
+library(survival)
+library(MASS)
+library(sandwich)
+library(marginaleffects)
+library(fwb)
+library(forcats)
+library(purrr)
+options(survfit.rmean = "common")
+
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v0.8.csv", stringsAsFactors = FALSE, header = TRUE)
+
+
+data <- data_raw %>%
+  mutate(rand_gp = case_when(study_id == "CD-04011" ~ 1, .default = rand_gp),
+         rand_gp = case_when(rand_gp == 2 ~ 0, .default = rand_gp),
+         nonrand_gp = case_when(nonrand_gp == 2 ~ 0, .default = nonrand_gp),
+         rand_gp = factor(rand_gp, levels = c ("0","1"), labels = c("Control", "Intervention")),
+         nonrand_gp = factor(nonrand_gp, levels = c ("0","1"), labels = c("Control", "Intervention")),
+         date_42wpma = as.Date(date_36wpma) + weeks(6),
+         date_44wpma = as.Date(date_36wpma) + weeks(8),
+         date_52wpma = as.Date(date_36wpma) + weeks(16),
+         )
+levels(data$rand_gp) <- c("Control", "Intervention")
+#
+#NI - if had ROP Grade 1 - can't have ROP+ # confirm with Gill and Jane
+# older than 30 weeks - ROP+ = 0
+# CD-06007  ROP - unk, ROP+ - UNK, ROPRX - UNK
+# if rop.factor = 0 and rop_plus_yn = unk then rop_plus_yn1. = 0
+
+# participant with rop = NI CD04044 passed away
+# particianpt with ROP ~ 5 are > 30 weeks therefore can't have ROP by definition
+# participant with roprx = 99 or NI had no ROP - NI
+#flag for September - similar process for NEC - have 0 necdx but have Stage 1 NEC (suspected)
+#cd-02042 = nectage = 1, cd-04050 = necstage = 1
+#CD-06002 = necstage = 2
+#mutate(necstage1 = case_when(necdx == "0" ~ "0", necdx == "NI" ~ "0", necstage == "NI" ~ "0", .default = necstage)) %>%
+
+#some multiples aren't really multiples
+
+
+#only include rand_sib for data_elig
+data_elig <- data %>%
+  filter(rand_sib == 1)
+
+data_sib <- data %>%
+  filter(rand_sib == 0)
+
+
+```
+
+
+## CONSORT ROWS - Randomised
+
+You can also embed plots, for example:
+
+```{r , echo=FALSE}
+ 
+ exclude_1 <- data_elig %>%
+ mutate(wd_1 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt) < as.Date(date_36wpma)) ~ 1, .default = 0),
+        dth_1 = case_when(dth_yn == 1 & (as.Date(dth_dtm) < as.Date(date_36wpma)) ~ 1, .default = 0),
+        LKA_1 = case_when(is.na(death_36wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0))
+        #LTFU_1 = case_when)
+        
+
+
+sum(exclude_1$dth_1)
+table(exclude_1$rand_gp, exclude_1$dth_1 == 1)
+sum(exclude_1$wd_1)
+table(exclude_1$rand_gp, exclude_1$wd_1 == 1)
+sum(exclude_1$LKA_1) #LTFU - 36mth cPNA < date extracted
+table(exclude_1$rand_gp, exclude_1$LKA_1 == 1)
+
+        
+data_36 <- exclude_1 %>%
+ filter(!(wd_1 == 1 | dth_1 == 1 | LKA_1 == 1))
+nrow(data_36)#680
+
+table(data_36$rand_gp)
+    # Control Intervention 
+    #      354          326 
+table(data_36$rand_gp, data_36$ga_strata)
+
+ exclude_2 <- data_36 %>%
+ mutate(wd_2 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_42wpma ~ 1, .default = 0),
+        dth_2 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_42wpma ~ 1, .default = 0),
+        LKA_2 = case_when(is.na(death_42wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0))
+ 
+
+sum(exclude_2$dth_2)
+table(exclude_2$rand_gp, exclude_2$dth_2 == 1)
+sum(exclude_2$wd_2)
+table(exclude_2$rand_gp, exclude_2$wd_2 == 1)
+sum(exclude_2$LKA_2) #this includes the LTFU in the exclude boxes
+table(exclude_2$rand_gp, exclude_2$LKA_2 == 1)
+        
+data_42 <- exclude_2 %>%
+filter(!(wd_2 == 1 | dth_2 == 1 | LKA_2 == 1))
+nrow(data_42) #540
+
+table(data_42$rand_gp)
+     # Control Intervention 
+     #     282          258 
+table(data_42$rand_gp, data_42$ga_strata)
+
+exclude_3 <- data_42 %>%
+ mutate(wd_3 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_44wpma ~ 1, .default = 0),
+        dth_3 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_44wpma ~ 1, .default = 0),
+        LKA_3 = case_when(is.na(death_44wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0))
+
+
+sum(exclude_3$dth_3)
+table(exclude_3$rand_gp, exclude_3$dth_3 == 1)
+sum(exclude_3$wd_3)
+table(exclude_3$rand_gp, exclude_3$wd_3 == 1)
+sum(exclude_3$LKA_3) #this includes the LTFU in the exclude boxes
+table(exclude_3$rand_gp, exclude_3$LKA_3 == 1)
+
+data_44 <- exclude_3 %>%
+  filter(!(wd_3 == 1 | dth_3 == 1 | LKA_3 == 1))
+ nrow(data_44)#530
+ 
+table(data_44$rand_gp)
+ # Control Intervention 
+ #         278          252 
+table(data_44$rand_gp, data_44$ga_strata)
+
+exclude_4 <- data_44 %>%
+ mutate(wd_4 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_52wpma ~ 1, .default = 0),
+        dth_4 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_52wpma ~ 1, .default = 0),
+        LKA_4 = case_when(is.na(death_52wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0))    
+
+
+sum(exclude_4$dth_4)
+table(exclude_4$rand_gp, exclude_4$dth_4 == 1)
+sum(exclude_4$wd_4)
+table(exclude_4$rand_gp, exclude_4$wd_4 == 1)
+sum(exclude_4$LKA_4) #this includes the LTFU in the exclude boxes
+table(exclude_4$rand_gp, exclude_4$LKA_4 == 1)
+ 
+data_52 <- exclude_4 %>%
+filter(!(wd_4 == 1 | dth_4 == 1 | LKA_4 == 1))
+nrow(data_52) #515
+
+table(data_52$rand_gp)
+    # Control Intervention 
+    #      267          248 
+table(data_52$rand_gp, data_52$ga_strata)
+
+##check each LKA with the Bailey 4 numbers for LTFU then split
+```
+
+## CONSORT ROWS - Randomised
+
+
+```{r , echo=FALSE}
+ 
+ exclude_1 <- data_sib %>%
+ mutate(wd_1 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt) < as.Date(date_36wpma)) ~ 1, .default = 0),
+        dth_1 = case_when(dth_yn == 1 & (as.Date(dth_dtm) < as.Date(date_36wpma)) ~ 1, .default = 0),
+        LKA_1 = case_when(is.na(death_36wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0))
+        #LTFU_1 = case_when)
+        
+
+
+sum(exclude_1$dth_1)
+table(exclude_1$nonrand_gp, exclude_1$dth_1 == 1)
+sum(exclude_1$wd_1)
+table(exclude_1$nonrand_gp, exclude_1$wd_1 == 1)
+sum(exclude_1$LKA_1) #LTFU - 36mth cPNA < date extracted
+table(exclude_1$nonrand_gp, exclude_1$LKA_1 == 1)
+
+        
+data_36 <- exclude_1 %>%
+ filter(!(wd_1 == 1 | dth_1 == 1 | LKA_1 == 1))
+nrow(data_36)#680
+
+table(data_36$nonrand_gp)
+    # Control Intervention 
+    #      354          326 
+table(data_36$nonrand_gp, data_36$ga_strata)
+
+ exclude_2 <- data_36 %>%
+ mutate(wd_2 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_42wpma ~ 1, .default = 0),
+        dth_2 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_42wpma ~ 1, .default = 0),
+        LKA_2 = case_when(is.na(death_42wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0))
+ 
+
+sum(exclude_2$dth_2)
+table(exclude_2$nonrand_gp, exclude_2$dth_2 == 1)
+sum(exclude_2$wd_2)
+table(exclude_2$nonrand_gp, exclude_2$wd_2 == 1)
+sum(exclude_2$LKA_2) #this includes the LTFU in the exclude boxes
+table(exclude_2$nonrand_gp, exclude_2$LKA_2 == 1)
+        
+data_42 <- exclude_2 %>%
+filter(!(wd_2 == 1 | dth_2 == 1 | LKA_2 == 1))
+nrow(data_42) #540
+
+table(data_42$nonrand_gp)
+     # Control Intervention 
+     #     282          258 
+table(data_42$nonrand_gp, data_42$ga_strata)
+
+exclude_3 <- data_42 %>%
+ mutate(wd_3 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_44wpma ~ 1, .default = 0),
+        dth_3 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_44wpma ~ 1, .default = 0),
+        LKA_3 = case_when(is.na(death_44wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0))
+
+
+sum(exclude_3$dth_3)
+table(exclude_3$nonrand_gp, exclude_3$dth_3 == 1)
+sum(exclude_3$wd_3)
+table(exclude_3$nonrand_gp, exclude_3$wd_3 == 1)
+sum(exclude_3$LKA_3) #this includes the LTFU in the exclude boxes
+table(exclude_3$nonrand_gp, exclude_3$LKA_3 == 1)
+
+data_44 <- exclude_3 %>%
+  filter(!(wd_3 == 1 | dth_3 == 1 | LKA_3 == 1))
+ nrow(data_44)#530
+ 
+table(data_44$nonrand_gp)
+ # Control Intervention 
+ #         278          252 
+table(data_44$nonrand_gp, data_44$ga_strata)
+
+exclude_4 <- data_44 %>%
+ mutate(wd_4 = case_when(withdraw_yn == 1 & (as.Date(withdraw_dt)) < date_52wpma ~ 1, .default = 0),
+        dth_4 = case_when(dth_yn == 1 & (as.Date(dth_dtm)) < date_52wpma ~ 1, .default = 0),
+        LKA_4 = case_when(is.na(death_52wpma) & dth_yn != 1 & withdraw_yn != 1 ~ 1, .default = 0))    
+
+
+sum(exclude_4$dth_4)
+table(exclude_4$nonrand_gp, exclude_4$dth_4 == 1)
+sum(exclude_4$wd_4)
+table(exclude_4$nonrand_gp, exclude_4$wd_4 == 1)
+sum(exclude_4$LKA_4) #this includes the LTFU in the exclude boxes
+table(exclude_4$nonrand_gp, exclude_4$LKA_4 == 1)
+ 
+data_52 <- exclude_4 %>%
+filter(!(wd_4 == 1 | dth_4 == 1 | LKA_4 == 1))
+nrow(data_52) #515
+
+table(data_52$nonrand_gp)
+    # Control Intervention 
+    #      267          248 
+table(data_52$nonrand_gp, data_52$ga_strata)
+
+##check each LKA with the Bailey 4 numbers for LTFU then split
+```
