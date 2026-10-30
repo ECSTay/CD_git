@@ -37,7 +37,7 @@ library(forcats)
 library(purrr)
 options(survfit.rmean = "common")
 
-data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v0.8.csv", stringsAsFactors = FALSE, header = TRUE)
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.0.csv", stringsAsFactors = FALSE, header = TRUE)
 
 
 data <- data_raw %>%
