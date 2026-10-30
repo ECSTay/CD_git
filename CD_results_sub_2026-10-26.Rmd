@@ -620,6 +620,113 @@ The data for this estimand includes the randomised and eligible participants kno
 
 There was insufficient evidence to detect a significant difference in the risk of any BPD between the control and the intervention groups (marginal adjusted risk ratio 0.86, 95% CI: 0.72 to 1.03; p-value = 0.098).
 
+## Sensitivity analysis for S8 a) replace all missing BPD status with did not occur
+
+```{r Estimand_S8_SA1, echo=FALSE, message = FALSE, warning = FALSE}
+
+data_S8_SA1 <- data_elig %>%
+  mutate(BPD_any_SA1 = case_when(is.na(BPD_any) ~ 0, .default = BPD_any))  %>%
+  dplyr::select(BPD_any_SA1, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(BPD_any_SA1, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
+  #dplyr::select(where(~ any(is.na(.)))) %>% #dth_yn has 2 NA values
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+fit_S8_SA1 <- glm(BPD_any_SA1 ~ rand_gp + multiple + ans.factor + ga_strata.f + sex +
+                        Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+              data = data_S8_SA1, family = binomial(link = "logit"))
+
+summary_fit <- summary(fit_S8_SA1)
+
+S8_SA1_rr_marginal <- avg_comparisons(fit_S8_SA1, variables = "rand_gp", type = "response", transform = "exp", comparison = "lnratioavg", vcov = "HC3")
+
+
+target_variable <- "rand_gp"
+#don't adjust p_value
+aRR <- exp(coef(fit_S8_SA1)["rand_gp"])
+conf_int <- exp(confint(fit_S8_SA1, "rand_gp"))
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+raw_p_value_8_SA1 <- round(summary_fit$coefficients["rand_gp", "Pr(>|z|)"], digits = 3)
+marg_RR <- S8_SA1_rr_marginal$estimate
+marg_Lower_95_CI = S8_SA1_rr_marginal[,6]
+marg_Upper_95_CI = S8_SA1_rr_marginal[,7]
+p_value_SA1 <- S8_SA1_rr_marginal$p.value
+
+
+results_8_SA1 <- data.frame(
+  #Parameter = target_variable,
+  estimate = round(aRR, digits = 2),
+  Lower_95_CI = round(conf_int[1], digits = 2),
+  Upper_95_CI = round(conf_int[2], digits = 2),
+  raw_p_value = raw_p_value_8_SA1,
+  marg_estimate <- round(marg_RR, digits = 2),
+  marg_Lower_95_CI = round(marg_Lower_95_CI, digits = 2),
+  marg_Upper_95_CI = round(marg_Upper_95_CI, digits = 2),
+  p_value = round(p_value_SA1, digits = 3)
+)
+
+results_8_SA1 <- results_8_SA1 %>%
+  rename(marg_estimate = marg_estimate....round.marg_RR..digits...2.)
+
+print(results_8_SA1)
+
+#don't adjust p-value
+```
+This sensitivity analysis was performed replacing the 36 missing BPD status with values indicating that BPD did not occur in these participants. Participants in the intervention group have a statistically significant 21% lower risk of any BPD than the control group (marginal adjusted risk ratio 0.79, 95% CI: 0.66 to 0.95; p-value = 0.012)
+
+## Sensitivity analysis for S8 b) replace all missing BPD status with occurred by 36.0 weeks PMA
+
+```{r Estimand_S8_SA2, echo=FALSE, message = FALSE, warning = FALSE}
+
+data_S8_SA2 <- data_elig %>%
+  mutate(BPD_any_SA2 = case_when(is.na(BPD_any) ~ 1, .default = BPD_any))  %>%
+  dplyr::select(BPD_any_SA2, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
+  tidyr::drop_na(BPD_any_SA2, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
+  #dplyr::select(where(~ any(is.na(.)))) %>% #dth_yn has 2 NA values
+  add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
+
+fit_S8_SA2 <- glm(BPD_any_SA2 ~ rand_gp + multiple + ans.factor + ga_strata.f + sex +
+                        Birth_weight_Z1 + Birth_weight_Z2 + Birth_weight_Z3,
+              data = data_S8_SA2, family = binomial(link = "logit"))
+
+summary_fit <- summary(fit_S8_SA2)
+
+S8_SA2_rr_marginal <- avg_comparisons(fit_S8_SA2, variables = "rand_gp", type = "response", transform = "exp", comparison = "lnratioavg", vcov = "HC3")
+
+
+target_variable <- "rand_gp"
+#don't adjust p_value
+aRR <- exp(coef(fit_S8_SA2)["rand_gp"])
+conf_int <- exp(confint(fit_S8_SA2, "rand_gp"))
+cat("95% CI for difference:", conf_int[1], "to", conf_int[2], "\n")
+raw_p_value_8_SA2 <- round(summary_fit$coefficients["rand_gp", "Pr(>|z|)"], digits = 3)
+marg_RR <- S8_SA2_rr_marginal$estimate
+marg_Lower_95_CI = S8_SA2_rr_marginal[,6]
+marg_Upper_95_CI = S8_SA2_rr_marginal[,7]
+p_value_SA2 <- S8_SA2_rr_marginal$p.value
+
+
+results_8_SA2 <- data.frame(
+  #Parameter = target_variable,
+  estimate = round(aRR, digits = 2),
+  Lower_95_CI = round(conf_int[1], digits = 2),
+  Upper_95_CI = round(conf_int[2], digits = 2),
+  raw_p_value = raw_p_value_8_SA1,
+  marg_estimate <- round(marg_RR, digits = 2),
+  marg_Lower_95_CI = round(marg_Lower_95_CI, digits = 2),
+  marg_Upper_95_CI = round(marg_Upper_95_CI, digits = 2),
+  p_value = round(p_value_SA1, digits = 3)
+)
+
+results_8_SA2 <- results_8_SA2 %>%
+  rename(marg_estimate = marg_estimate....round.marg_RR..digits...2.)
+
+print(results_8_SA2)
+
+#don't adjust p-value
+```
+This sensitivity analysis was performed replacing the 36 missing BPD status with values indicating that BPD did  occur by 36.0 weeks PMA in these participants. Participants in the intervention group have a statistically significant 2% lower risk of any BPD than the control group (marginal adjusted risk ratio 0.98, 95% CI: 0.83 to 1.15; p-value = 0.012)
+
+
 # S9: BPD severity as defined by Jensen 2019 by $\leq$36.0 w PMA (not analysed)
 
 # S14 Necrotising enterocolitis (NEC) Stage II or greater prior to discharge home or 44.0 weeks PMA, whichever occurs sooner
@@ -687,13 +794,7 @@ There was insufficient evidence to conclude that there was a difference in risk 
 ```{r Estimand_S15, echo=FALSE, message = FALSE, warning = FALSE}
 ## retinopathy of prematurity (ROP) stage III or greater, or stage II with plus disease present before 44.0 w PMA
 
-#Randomised trial eligible participants 
-# Participants who have incomplete medical records up to 44.0 w PMA due to IE.3, or IE.4 and are without evidence of
-# ROP stage III or greater, will be excluded from the analysis (i.e. it is unknown whether they later
-# experienced ROP in this time period). Participants with incomplete time-course medical records due
-# to death (IE.7) within 44.0 w PMA will be included in the analysis.
 
-#Fit logistic regression model
 data_S15 <- data_elig %>%
   dplyr::select(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
@@ -747,18 +848,7 @@ There was insufficient evidence to conclude a difference in risk of ROP Stage II
 ```{r Estimand_S18, echo=FALSE, message = FALSE, warning = FALSE}
 ## number of culture-positive sepsis episodes for participants who survive to 44.0 w PMA****
 
-##SAMPLE CODE for  Poisson - adjusted relative rate (95%CI)
-
-# Randomised trial eligible participants, excluding participants who withdrew, were lost to follow-up, 
-#discharged to non-participating level 2 hospital or died before 44.0 wPMA
-
-#Participants with incomplete sepsis records due to death (IE.7) within 36.0 w PMA will be included in the analysis
-# In the absence of evidence for any culture positive sepsis episodes, it will be assumed that there were zero episodes
-
 #Fit Poisson regression model - rate ratio
-
-
-
 
 data_S18 <- data_elig %>%
   filter(wk44_present == 1) %>%
