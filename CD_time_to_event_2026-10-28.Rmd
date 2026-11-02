@@ -484,23 +484,23 @@ plot6 <- ggplot(curve_data6, aes(x = time, y = cum_discharge, color = rand_gp, f
 # Display the plot
 print(plot6)
 
-ggsave(
-  filename = "Discharge_tertiary.pdf",
-  plot = plot6,
-  width = 10,              # Standard journal page width (inches)
-  height = 6,              # Standard height (inches)
-  units = "in"
-)
-
 # ggsave(
-#   filename = "Discharge_Home_curves.tiff",
+#   filename = "Discharge_tertiary.pdf",
 #   plot = plot6,
-#   width = 10,
-#   height = 6,
-#   units = "in",
-#   dpi = 600,               # Publication-grade sharpness
-#   compression = "lzw"      # Compresses the background safely without losing layout details
+#   width = 10,              # Standard journal page width (inches)
+#   height = 6,              # Standard height (inches)
+#   units = "in"
 # )
+
+ggsave(
+  filename = "Discharge_Teriary.tiff",
+  plot = plot6,
+  width = 10,
+  height = 6,
+  units = "in",
+  dpi = 600,               # Publication-grade sharpness
+  compression = "lzw"      # Compresses the background safely without losing layout details
+)
 
 ```
 The data for these time-to-event estimands included the randomised eligible trial participants (N = 744). Of these participants, 42 were missing their date of tertiary hospital discharge: 38 of these participants had withdrawn from the study (censored at date of withdrawal), 3 had died (censored at 52 weeks PMA) and 1 was missing their date of tertiary hospital discharge. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
@@ -835,9 +835,9 @@ print(median_table6)
 stratified_results6 <- data_S6 %>%
   group_by(ga_strata.f, rand_gp) %>%
   summarise(
-    numerator = sum(discharge_pma >= 52, na.rm = TRUE),
+    numerator = sum(discharge_pma >= 40, na.rm = TRUE),
     denominator = sum(!is.na(discharge_pma)),
-    proportion = mean(discharge_pma >= 52, na.rm = TRUE),
+    proportion = mean(discharge_pma >= 40, na.rm = TRUE),
     .groups = "drop"
   )
 
