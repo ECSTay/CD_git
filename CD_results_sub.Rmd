@@ -39,7 +39,7 @@ library(purrr)
 library(AER)
 options(survfit.rmean = "common")
 
-data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.0.csv", stringsAsFactors = FALSE, header = TRUE)
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.1.csv", stringsAsFactors = FALSE, header = TRUE)
 
 data_raw <- data_raw %>%
    mutate(nonrand_gp = case_when(study_id == "CD-04011" ~ 1, .default = nonrand_gp)) %>%#intervention
@@ -122,9 +122,9 @@ data <- data_raw %>%
          ROP_2plus = case_when(rop %in% c("3","4","5") ~ 1,
                                rop == "2" & rop_plus_yn == 1 ~ 1,
                                is.na(rop) & death_44wpma == 1 ~ 0,
-                               is.na(rop) & withdraw_dcg == 1 ~ NA, #dsicharge to secondary hospital
+                               is.na(rop) & withdraw_dcg == 1 ~ NA, #withdrew before discharge
                               .default = 0),
-         ROP_2plus = as.numeric(ROP_2plus), #29 in data_elig
+         ROP_2plus = as.numeric(ROP_2plus), 
          sepsis_count = case_when(death_44wpma == 1 & !is.na(sepsis_proven_no) ~ sepsis_proven_no,
                                   death_44wpma == 1 & is.na(sepsis_proven_no) ~ 0,
                                   withdraw_44wpma == 1 ~ NA, 
@@ -182,7 +182,7 @@ add_rcs_splines <- function(data, x_var, probs = c(0.1, 0.4, 0.6, 0.9)) {
 
 
 data_S1 <- data_elig %>%
-  filter(wk36_present == 1 | death_36wpma == 1) %>% #691 #689
+  filter(wk36_present == 1 | death_36wpma == 1) %>% #1.1: 691 (#1.2: 689)
   dplyr::select(death_36wpma,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(death_36wpma,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -225,9 +225,9 @@ rename(marg_estimate = marg_estimate....marg_RR)
 
 print(results_1)
 ```
-The data for this estimand included the randomised participants known to survive until 36.0 weeks PMA (N = 680). 2 were excluded due to missing outcome (death) data leaving 678 participants included in this analysis.
+The data for this estimand included the randomised participants known to survive until 36.0 weeks PMA, excluding those who were withdrawn by 36 week PMA (N = 53) . 2 were excluded due to missing outcome (death) data leaving 689 participants included in this analysis.
 
-There was insufficient evidence to conclude a significant difference in the risk of survival to 36.0 weeks PMA between the intervention and the control groups (marginal adjusted risk ratio 1.11, 95% CI: 0.17 to 7.36, B-H adjusted p-value = 0.913). The wide confidence interval indicates considerable uncertainty regarding the magnitude of the effect.
+There was insufficient evidence to conclude a significant difference in the risk of survival to 36.0 weeks PMA between the intervention and the control groups (marginal adjusted risk ratio 0.581, 95% CI: 0.14 to 2.52, B-H adjusted p-value = 0.471). 
 
 # S2: Standardised weight at 36.0 w PMA (window 34.0 to <38.0 w PMA, general linear regression model)
 
@@ -237,7 +237,7 @@ There was insufficient evidence to conclude a significant difference in the risk
 #Outcomes for participants with missing data due to IE.3-IE.5 will be imputed using multiple imputation informed by
 #participant’s prematurity stratum, multiple birth status 
 
-#filter those who died <= 36wPMA
+#filter out those who died <= 36wPMA
 
 data_S2 <- data_elig %>%
   filter(death_36wpma == 0 | is.na(death_36wpma)) %>% #735
@@ -303,9 +303,9 @@ rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9
 print(results_2)
 
 ```
-The data for this estimand includes all randomised participants known to survive until 36.0 weeks PMA (n = 680). 8 were missing their standardised weight Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window and 6 were discharged to secondary hospitals before 36.0 weeks PMA. The weight Z-scores of these 8 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
+The data for this estimand includes all randomised participants known to survive until 36.0 weeks PMA (n = 735). 48 were missing their standardised weight Z-scores at 36.0 weeks PMA. 40 had withdrawn before 36w PMA. 7 had been discharged  to secondary hospital before 36 weeks PMA. 1 had their growth variables collected outside the 34-38 week window The weight Z-scores of these 48 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
 
-There was insufficient evidence to conclude a significant difference in the means of standardised weight Z-scores at 36.0 weeks PMA between the control and intervention groups (marginal adjusted difference in means: 0.01, 95% CI: -0.10 to 0.12, B-H adjusted p-value = 0.913).
+There was insufficient evidence to conclude a significant difference in the means of standardised weight Z-scores at 36.0 weeks PMA between the control and intervention groups (marginal adjusted difference in means: 0.01, 95% CI: -0.10 to 0.12, B-H adjusted p-value = 0.995).
 
 
 # S3: Standardised length at 36.0 w PMA (window 34.0 to <38.0 w PMA, general linear regression model)
@@ -315,7 +315,7 @@ There was insufficient evidence to conclude a significant difference in the mean
 ##SAMPLE CODE for GLM - adjusted difference in mean with 95%CI*****
 
 data_S3 <- data_elig %>%
-  filter(death_36wpma == 0 | is.na(death_36wpma)) %>% #680
+  filter(death_36wpma == 0 | is.na(death_36wpma)) %>% #735
   dplyr::select(study_id,wpma36_length_Z, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -375,11 +375,11 @@ rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9
 print(results_3)
 
 ```
-The data for this estimand includes randomised participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised length Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 27 did not have their length recorded at 36.0 week PMA, leaving 645 participants available for analysis. The length Z-scores of these 35 participants were imputed informed by prematurity strata and multiple birth status.
+#The data for this estimand includes randomised participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised length Z-scores at 36.0 weeks PMA: 9 was withdrawn by 36 weeks PMA, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 27 did not have their length recorded at 36.0 week PMA, leaving 645 participants available for analysis. The length Z-scores of these 35 participants were imputed informed by prematurity strata and multiple birth status.
 
-After adjustment for relevant covariates, the intervention group had a statistically significant mean difference of 0.21 in length Z-scores (SD from our cohort translate to cm) compared to the control group, translating to mean difference of approximately 0.64cm* longer than the control group within the cohort (marginal adjusted difference in means: 0.21, 95% CI: 0.06 to 0.37; B-H adjusted p-value = 0.012).
+After adjustment for relevant covariates, the intervention group had a statistically significant mean difference of 0.20 in length Z-scores (SD from our cohort translate to cm) compared to the control group, translating to mean difference of approximately 0.61cm* longer than the control group within the cohort (marginal adjusted difference in means: 0.20, 95% CI: 0.05 to 0.35; B-H adjusted p-value = 0.007).
 
-*0.21 x 3.05 (SD of the crown-heel length at 36.0wk PMA of the cohort)
+*0.20 x 3.05 (SD of the crown-heel length at 36.0wk PMA of the cohort)
 
 # S4: Standardised head circumference at 36.0 w PMA (window 34.0 to <38.0 w PMA, general linear regression model)
 ```{r Estimand_S4, echo=FALSE, message = FALSE, warning = FALSE}
@@ -449,9 +449,9 @@ print(results_4)
 
 
 ```
-The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised head circumference Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 17 did not have their head circumference measured at 36.0 weeks PMA, leaving 655 participants available for analysis. The head circumference Z-scores of these 25 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status.1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
+#The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised head circumference Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 17 did not have their head circumference measured at 36.0 weeks PMA, leaving 655 participants available for analysis. The head circumference Z-scores of these 25 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status.1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
 
-There was insufficient evidence to detect a difference in mean standardised head circumference Z scores between the intervention and control groups (adjusted mean difference -0.10, 95% CI: -0.25 to 0.05, B-H adjusted p-value = 0.348).
+There was insufficient evidence to detect a difference in mean standardised head circumference Z scores between the intervention and control groups (adjusted mean difference -0.09, 95% CI: -0.24 to 0.06, B-H adjusted p-value = 0.225).
 
 
 # S5: Difference in weight z-score between  birth $\&$ 36.0 w PMA (window $34.0$ to $<38.0$ w PMA, general linear regression model)
@@ -531,7 +531,7 @@ There was no evidence the adjusted mean growth velocity differed significantly b
 ```{r Estimand_S8, echo=FALSE, message = FALSE, warning = FALSE}
 
 data_S8 <- data_elig %>%
-  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>% #697 #698
+  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>%  #700
   dplyr::select(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -577,15 +577,16 @@ print(results_8)
 
 #don't adjust p-value
 ```
-The data for this estimand includes the randomised participants (N = 744). 36 participants were missing data and excluded for this outcome.34 had withdrawn without evidence of BPD, 1 participant had been discharged to a non-participating hospital without evidence of BPD and 1 participant was missing this data altogether.
+The data for this estimand includes the randomised participants (N = 744). 44 participants were missing data and excluded for this outcome.34 had withdrawn without evidence of BPD, 1 participant had been discharged to a non-participating hospital without evidence of BPD and 1 participant was missing this data altogether.
 
-There was insufficient evidence to detect a significant difference in the risk of any BPD between the control and the intervention groups (marginal adjusted risk ratio 0.89, 95% CI: 0.75 to 1.06; p-value = 0.191).
+There was insufficient evidence to detect a significant difference in the risk of any BPD between the control and the intervention groups (marginal adjusted risk ratio 0.89, 95% CI: 0.75 to 1.06; p-value = 0.204).
 
 ## Sensitivity analysis for S8 a) replace all missing BPD status with did not occur
 
 ```{r Estimand_S8_SA1, echo=FALSE, message = FALSE, warning = FALSE}
 
 data_S8_SA1 <- data_elig %>%
+  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>%
   mutate(BPD_any_SA1 = case_when(is.na(BPD_any) ~ 0, .default = BPD_any))  %>%
   dplyr::select(BPD_any_SA1, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(BPD_any_SA1, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
@@ -632,13 +633,14 @@ print(results_8_SA1)
 
 #don't adjust p-value
 ```
-This sensitivity analysis was performed replacing the 36 missing BPD status with values indicating that BPD did not occur in these participants. Participants in the intervention group have a statistically significant 21% lower risk of any BPD than the control group (marginal adjusted risk ratio 0.79, 95% CI: 0.66 to 0.95; p-value = 0.012)
+This sensitivity analysis was performed replacing the 36 missing BPD status with values indicating that BPD did not occur in these participants. There was insufficient evidence to detect a difference in the risk of BPD between the control and intervention groups (marginal adjusted risk ratio 0.88, 95% CI: 0.74 to 1,06; p-value = 0.174)
 
 ## Sensitivity analysis for S8 b) replace all missing BPD status with occurred by 36.0 weeks PMA
 
 ```{r Estimand_S8_SA2, echo=FALSE, message = FALSE, warning = FALSE}
 
 data_S8_SA2 <- data_elig %>%
+  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>%
   mutate(BPD_any_SA2 = case_when(is.na(BPD_any) ~ 1, .default = BPD_any))  %>%
   dplyr::select(BPD_any_SA2, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(BPD_any_SA2, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
@@ -685,7 +687,7 @@ print(results_8_SA2)
 
 #don't adjust p-value
 ```
-This sensitivity analysis was performed replacing the 36 missing BPD status with values indicating that BPD did  occur by 36.0 weeks PMA in these participants. Participants in the intervention group have a statistically significant 2% lower risk of any BPD than the control group (marginal adjusted risk ratio 0.98, 95% CI: 0.83 to 1.15; p-value = 0.012)
+This sensitivity analysis was performed replacing the 36 missing BPD status with values indicating that BPD did  occur by 36.0 weeks PMA in these participants. There was insufficient evidence to detect a difference in the risk of BPD between the control and intervention groups (marginal adjusted risk ratio 0.91, 95% CI: 0.76 to 1.08; p-value = 0.174)
 
 
 # S14 Necrotising enterocolitis (NEC) Stage II or greater prior to discharge home or 44.0 weeks PMA, whichever occurs sooner
@@ -696,7 +698,7 @@ This sensitivity analysis was performed replacing the 36 missing BPD status with
 ##does not require the 44wk filter
 
 data_S14 <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | nec_2 == 1) %>% #688 #546
+  filter(wk44_present == 1 | death_44wpma == 1 | nec_2 == 1) %>% #688 #554
   dplyr::select(nec_2,study_id,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex,recr_hosp.factor) %>%
   #dplyr::select(where(~ any(is.na(.))))
@@ -744,9 +746,9 @@ print(results_14)
 
 #don't adjust p-value
 ```
-The data for this estimand included the randomised and eligible participants who have been discharged home or known to survive until 44.0 weeks PMA, whichever occurs sooner (N = 744). No participants had data missing for this outcome in this cohort.filter(!(nec_2 == 0 & withdraw_44wpma == 1)) 
+The data for this estimand included the randomised and eligible participants who have been discharged home or known to survive until 44.0 weeks PMA, whichever occurs sooner (N = 744). No participants had data missing for this outcome in this cohort.
 
-There was a  difference in risk of NEC Stage II or greater between the intervention and control groups (marginal adjusted risk ratio 0.30, 95%CI: 0.12 to 0.73, p-value = 0.008).
+There was a  difference in risk of NEC Stage II or greater between the intervention and control groups (marginal adjusted risk ratio 0.38, 95%CI: 0.16 to 0.90, p-value = 0.029).
 
 
 # S15: Retinopathy of prematurity (ROP) stage III or greater, or stage II with plus disease present before 44.0 w PMA (logistic regression model)
@@ -756,7 +758,7 @@ There was a  difference in risk of NEC Stage II or greater between the intervent
 
 
 data_S15 <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | ROP_2plus == 1) %>% #553
+  filter(wk44_present == 1 | death_44wpma == 1 | ROP_2plus == 1) %>% #688
   dplyr::select(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   #dplyr::select(where(~ any(is.na(.)))) %>% dth_yn has 2 NA values
@@ -800,8 +802,7 @@ print(results_15)
 ```
 The data for this estimand included the randomised and eligible participants (N = 744). There was no missing data for this outcome.
 
-There was insufficient evidence to conclude a difference in risk of ROP Stage III or greater or ROP Stage II plus disease between the intervention and control groups (marginal adjusted risk ratio 1.44, 95% CI 0.70 to 2.95; p-value = 0.318). The wide confidence interval indicates considerable uncertainty regarding the magnitude of the effect.
-
+There was insufficient evidence to conclude a difference in risk of ROP Stage III or greater or ROP Stage II plus disease between the intervention and control groups (marginal adjusted risk ratio 1.77, 95% CI 0.87 to 3.6; p-value = 0.114). 
 
 
 # S18: Number of culture-positive sepsis episodes for participants who survive to 44.0wk PMA (Poisson regression model)
@@ -812,7 +813,7 @@ There was insufficient evidence to conclude a difference in risk of ROP Stage II
 #Fit Poisson regression model - rate ratio
 
 data_S18 <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1) %>% #686 #541
+  filter(wk44_present == 1 | death_44wpma == 1 | sepsis_proven_yn == 1) %>% #691
   dplyr::select(study_id,sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>% 
   tidyr::drop_na(sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   #dplyr::select(where(~ any(is.na(.))))# 
@@ -885,7 +886,7 @@ print(results_18)
 ```
 This estimand included the participants who were known to be alive at 44.0 wk PMA (n = 530). There was 1 participant with missing data for this outcome and were excluded leaving 529 participants available for analysis.
 
-There was insufficient evidence to conclude a significant difference in the adjusted rate of number of sepsis episodes between the intervention and control groups (marginal adjusted rate ratio 0.82, 95% CI: 0.43 to 1.56, p-value = 0.883.
+There was insufficient evidence to conclude a significant difference in the adjusted rate of number of sepsis episodes between the intervention and control groups (marginal adjusted rate ratio 0.87, 95% CI: 0.45 to 1.69, p-value = 0.685.
 
 ##PLATIPUS scores
 
@@ -1011,12 +1012,10 @@ big_table <- rbind(results_1,results_2,results_3,results_4,results_5,#results_6,
 
 print(big_table)
 
-library(gtsummary)
-library(dplyr)
 
 # Updated for gtsummary v2.0+ 
-data_S8_tab <- data_elig %>% #697
-filter(!(BPD == 0 & withdraw_36wpma == 1)) %>% #700 - of the 53 withdrawals, 9 had BPD
+data_S8_tab <- data_elig %>%
+  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1)  %>% #698 - of the 53 withdrawals, 9 had BPD
   tbl_strata(
     strata = ga_strata.f,
     .tbl_fun = \(x) tbl_summary(
@@ -1095,7 +1094,7 @@ growth_table
 ###nec_2 
 
 data_S14_table <- data_elig %>%
-  filter(!(nec_2 == 0 & withdraw_44wpma == 1)) %>% #688
+  filter(wk44_present == 1 | death_44wpma == 1 | nec_2 == 1) %>% #688
   mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
          nec_2.f = as.factor(nec_2),
          nec_2.f = fct_recode(nec_2.f,
@@ -1119,8 +1118,8 @@ data_S14_table
 
 ##ROP2-plus
 
-data_S15_table <- data_elig %>%
-  filter(!(ROP_2plus == 0 & withdraw_44wpma == 1)) %>% #688
+data_S15_tab <- data_elig %>%
+  filter(wk44_present == 1 | death_44wpma == 1 | ROP_2plus == 1)  %>% #688 #561
   mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
          ROP_2plus.f = as.factor(ROP_2plus)) %>%
  tbl_strata(
@@ -1137,32 +1136,12 @@ data_S15_table <- data_elig %>%
     
  )
 # 3. Print the table
-data_S15_table
+data_S15_tab
 
 ###
 
-data_S18_table <- data_elig %>%
-  filter(!(ROP_2plus == 0 & withdraw_44wpma == 1)) %>% #688
-  mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
-         ROP_2plus.f = as.factor(ROP_2plus)) %>%
- tbl_strata(
-    strata = ga_strata.f,
-    .tbl_fun = \(x) tbl_summary(
-      x,
-      include = ROP_2plus.f,
-      by = rand_gp,
-      percent = "column",
-      # {n} = numerator, {N} = denominator, {p} = percentage
-      statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
-      label = list(ROP_2plus.f ~ "ROP >Grade 2")
-    )
-    
- )
-# 3. Print the table
-data_S15_table
-
-data_S18_table <- data_elig %>%
-  filter(withdraw_44wpma == 0) %>%
+data_S18_tab <- data_elig %>%
+  filter(wk44_present == 1 | death_44wpma == 1 | sepsis_proven_yn == 1) %>% #569
   mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
          sepsis_count.f = as.factor(sepsis_count)) %>%
   tbl_strata(
@@ -1181,7 +1160,7 @@ data_S18_table <- data_elig %>%
   )
 
     
-    data_S18_table
+    data_S18_tab
 
 ```
 
