@@ -52,7 +52,7 @@ library(sandwich)
 library(lmtest)
 library(survminer)
 
-data1 <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v0.9.csv", stringsAsFactors = FALSE, header = TRUE)
+data1 <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.1.csv", stringsAsFactors = FALSE, header = TRUE)
 
  data1 <- data1 %>%
    mutate(nonrand_gp = case_when(study_id == "CD-04011" ~ 1, .default = nonrand_gp)) %>%#intervention to control
@@ -156,7 +156,7 @@ data_sib <- data %>%
   filter(rand_sib == 0)
 
 # Data manipulation
-data_off <- data %>%
+data_off <- data_elig %>%
   mutate(
     sex = case_when(
       sex== 0 ~ "Female",
@@ -191,18 +191,19 @@ data_sib <- data_sib %>%
 
 ```
 
+\newpage
+
 ## Offspring factors - Strata 1 - randomised and eligible
 ```{r tab.cap="Offspring demographic characteristics - Strata 1", tab.cap.style = "Caption", tab.id = "T1", echo = F}
 
-data_off_rand <- data_off
+data_off_1 <- data_off
 
-#data_off_rand$rand_gp.factor = factor(data_off$rand_gp, levels = c("0","1"), labels = c("Control", "Intervention"))
 
 table_demo <- function(data) {
   
   table_out <- data %>%
-    filter(rand_sib == 1) %>% 
     filter(ga_strata == 1) %>%
+    filter(withdraw_36wpma == 1) %>% #27
     dplyr::select("sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z","b_hc", 
     "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata","IVH_first_final.factor") %>%
     tbl_summary(by = rand_gp,
@@ -215,16 +216,14 @@ table_demo <- function(data) {
         ga_calc ~ "continuous",
         Birth_weight_Z ~ "continuous",
         Birth_HC_Z ~ "continuous",
-        as1.new ~ "continuous",
-        as5.new ~ "continuous",
-        IVH_first_final.factor ~ "categorical",
-        all_categorical() ~ "categorical",  # Set all categorical as categorical
-        all_continuous() ~ "continuous"  # Set continuous variables
+        as1.new ~ "continuous2",
+        as5.new ~ "continuous2",
+        IVH_first_final.factor ~ "categorical"
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N(%) for categorical variables
-        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous
-       # PARTICIPANT ~ "{n}"  # No percentage for PARTICIPANT variable
+        all_continuous() ~ "{mean} ({sd}) {median}",
+        c(as1.new, as5.new) ~ "{median} ({p25}, {p75})" 
       ),
       label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
         PNA_rand ~ 'PNA at randomisation (hours)',
@@ -241,7 +240,7 @@ table_demo <- function(data) {
   return(table_out)
 }
 
-table_demo(data_off_rand)
+table_demo(data_off_1)
 
 ```
 
@@ -250,15 +249,13 @@ table_demo(data_off_rand)
 ## Offspring factors - Strata 2 - randomised and eligible for analysis
 
 ```{r tab.cap="Offspring demographic characteristics - Strata 2", tab.cap.style = "Caption", tab.id = "T2", echo = F}
-data_off_rand2 <- data_off
-
-data_off_rand2$rand_gp.factor = factor(data_off$rand_gp, levels = c("0","1"), labels = c("Control", "Intervention"))
+data_off_2 <- data_off
 
 table_demo2 <- function(data) {
   
   table_out2 <- data %>%
-    filter(rand_sib == 1) %>% 
     filter(ga_strata == 2) %>%
+    filter(withdraw_36wpma == 1) %>% #26
     dplyr::select("sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z","b_hc", 
     "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata","IVH_first_final.factor") %>%
     tbl_summary(by = rand_gp,
@@ -271,16 +268,15 @@ table_demo2 <- function(data) {
         ga_calc ~ "continuous",
         Birth_weight_Z ~ "continuous",
         Birth_HC_Z ~ "continuous",
-        as1.new ~ "continuous",
-        as5.new ~ "continuous",
-        IVH_first_final.factor ~ "categorical",
-        all_categorical() ~ "categorical",  # Set all categorical as categorical
-        all_continuous() ~ "continuous"  # Set continuous variables
+        as1.new ~ "continuous2",
+        as5.new ~ "continuous2",
+        IVH_first_final.factor ~ "categorical"
+        
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N(%) for categorical variables
-        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous mean, sd, median
-       # PARTICIPANT ~ "{n}"  # No percentage for PARTICIPANT variable
+        all_continuous() ~ "{mean} ({sd}) {median}",
+       c(as1.new, as5.new) ~ "{median} ({p25}, {p75})" 
       ),
       label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
         PNA_rand ~ 'PNA at randomisation (hours)',
@@ -298,7 +294,7 @@ table_demo2 <- function(data) {
   return(table_out2)
 }
 
-table_demo2(data_off_rand2)
+table_demo2(data_off_2)
 ```
 
 
