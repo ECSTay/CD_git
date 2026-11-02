@@ -52,7 +52,7 @@ library(sandwich)
 library(lmtest)
 library(survminer)
 
-data1 <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v0.9.csv", stringsAsFactors = FALSE, header = TRUE)
+data1 <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.1.csv", stringsAsFactors = FALSE, header = TRUE)
 
  data1 <- data1 %>%
    mutate(nonrand_gp = case_when(study_id == "CD-04011" ~ 1, .default = nonrand_gp)) %>%#intervention to control
@@ -215,16 +215,14 @@ table_demo <- function(data) {
         ga_calc ~ "continuous",
         Birth_weight_Z ~ "continuous",
         Birth_HC_Z ~ "continuous",
-        as1.new ~ "continuous",
-        as5.new ~ "continuous",
-        IVH_first_final.factor ~ "categorical",
-        all_categorical() ~ "categorical",  # Set all categorical as categorical
-        all_continuous() ~ "continuous"  # Set continuous variables
+        as1.new ~ "continuous2",
+        as5.new ~ "continuous2",
+        IVH_first_final.factor ~ "categorical"
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N(%) for categorical variables
-        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous
-       # PARTICIPANT ~ "{n}"  # No percentage for PARTICIPANT variable
+        all_continuous() ~ "{mean} ({sd}) {median}",  # Stats for continuous
+       c(as1.new, as5.new) ~ "{median} ({p25}, {p75})" 
       ),
       label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
         PNA_rand ~ 'PNA at randomisation (hours)',
@@ -269,16 +267,14 @@ table_demo_sibs <- function(data) {
         ga_calc ~ "continuous",
         Birth_weight_Z ~ "continuous",
         Birth_HC_Z ~ "continuous",
-        as1.new ~ "continuous",
-        as5.new ~ "continuous",
-        IVH_first_final.factor ~ "categorical",
-        all_categorical() ~ "categorical",  # Set all categorical as categorical
-        all_continuous() ~ "continuous"  # Set continuous variables
+        as1.new ~ "continuous2",
+        as5.new ~ "continuous2",
+        IVH_first_final.factor ~ "categorical"
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N (%) for categorical variables
-        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous
-       # PARTICIPANT ~ "{n}"  # No percentage for PARTICIPANT variable
+        all_continuous() ~ "{mean} ({sd}) {median}",  # Stats for continuous
+       c(as1.new, as5.new) ~ "{median} ({p25}, {p75})" 
       ),
       label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
         PNA_rand ~ 'PNA at randomisation (hours)',
@@ -324,16 +320,14 @@ table_demo2 <- function(data) {
         ga_calc ~ "continuous",
         Birth_weight_Z ~ "continuous",
         Birth_HC_Z ~ "continuous",
-        as1.new ~ "continuous",
-        as5.new ~ "continuous",
-        IVH_first_final.factor ~ "categorical",
-        all_categorical() ~ "categorical",  # Set all categorical as categorical
-        all_continuous() ~ "continuous"  # Set continuous variables
+        as1.new ~ "continuous2",
+        as5.new ~ "continuous2",
+        IVH_first_final.factor ~ "categorical"
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N(%) for categorical variables
-        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous mean, sd, median
-       # PARTICIPANT ~ "{n}"  # No percentage for PARTICIPANT variable
+        all_continuous() ~ "{mean} ({sd}) {median}",  # Stats for continuous mean, sd, median
+       c(as1.new, as5.new) ~ "{median} ({p25}, {p75})" 
       ),
       label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
         PNA_rand ~ 'PNA at randomisation (hours)',
@@ -372,21 +366,19 @@ table_demo_sibs2 <- function(data) {
      missing ="ifany", missing_text = "(Missing)",
       digits = all_categorical() ~ c(0, 0),  # Precision for categorical variables
       type = list(
-        as1.new ~ "continuous",
-        as5.new ~ "continuous",
+        as1.new ~ "continuous2",
+        as5.new ~ "continuous2",
         sex.factor ~ "categorical",  
         multi.factor ~ "categorical",
         ga_calc ~ "continuous",
         Birth_weight_Z ~ "continuous",
         Birth_HC_Z ~ "continuous",
-        IVH_first_final.factor ~ "categorical",
-        all_categorical() ~ "categorical",  # Set all categorical as categorical
-        all_continuous() ~ "continuous"  # Set continuous variables
+        IVH_first_final.factor ~ "categorical"
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N (%) for categorical variables
-        all_continuous() ~ "{mean} ({sd}) {median}"#,  # Stats for continuous
-       
+        all_continuous() ~ "{mean} ({sd}) {median}",  # Stats for continuous
+        c(as1.new, as5.new) ~ "{median} ({p25}, {p75})" 
       ),
       label = list(sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
         PNA_rand ~ 'PNA at randomisation (hours)',
