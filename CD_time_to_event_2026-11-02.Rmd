@@ -227,11 +227,24 @@ fit_summary_6 <- summary(fit_S6)
 
 # Marginal effects: risk
 set.seed(245679640)
-S6_risk_marginal_ratio <- avg_comparisons(fit_S6, variables = "rand_gp", type = "risk", comparison = "ratio") |>
-  inferences(method = "fwb", R = 1000) #produces the hazard relative 
 
-S6_tab_marginal <- tidy(S6_risk_marginal_ratio)
-#S6_tab_marginal_ratio$p.value <-  2 * (1 - pnorm(abs(S6_tab_marginal_ratio$estimate / S6_tab_marginal_ratio$std.error)))
+
+set.seed(24372640)
+# S7_risk_marginal <- avg_comparisons(fit_S7, variables = "rand_gp", type = "expected", comparison = "lnratio", transform = exp) |>
+#   inferences(method = "fwb", R = 1000)
+
+pred_data_S6 <- data_S6 %>%
+  mutate(#entry_pma = case_when(ga_strata.f == "0" ~ 23,
+                               #ga_strata.f == "1" ~ 28),
+         exit_pma = 40)
+
+S6_risk_marginal <- avg_comparisons(fit_S6, variables = "rand_gp", type = "expected", 
+                                    comparison = "lnratio", transform = exp, vcov = FALSE,
+                                    newdata = pred_data_S6) |>
+                    inferences(method = "fwb", R = 1000)
+
+S6_tab_marginal <- tidy(S6_risk_marginal)
+p_value_6 <- 2 * pnorm(-abs((S6_tab_marginal$estimate - 1)/S6_tab_marginal$std.error))
 
 aHR <- round(exp(coef(fit_S6)["rand_gp"]), digits = 2)
 conf_int <- round(exp(confint(fit_S6, "rand_gp")), digits = 2)
@@ -242,7 +255,7 @@ p_value_raw_6  <- round(fit_summary_6$coefficients["rand_gp", "Pr(>|z|)"], digit
 marg_Lower_95_CI = round((S6_tab_marginal$conf.low), digits = 2)
 marg_Upper_95_CI = round((S6_tab_marginal$conf.high), digits = 2)
 marg_HR <- round((S6_tab_marginal$estimate), digits = 2)
-p_value_6 <- round(S6_tab_marginal[,5], digits = 3)
+p_value_6 <- round(p_value_6, digits = 3)
 
 results_6 <- data.frame(
   estimate = aHR,
@@ -325,20 +338,21 @@ rmst_diff2   <- round(rmst_i2- rmst_c2, 1)
 
  # Combine results and format for reporting
 results_df_6.2 <- tibble::tribble(
-     ~Section, ~Metric, ~Stratum, ~Control, ~Intervention, ~Effect, ~P_Value,
+    ~Section, ~Metric, ~Stratum, ~Control, ~Intervention, ~Effect, ~P_Value, ~BH_P_Value,
 
         # Section 1: Relative
-     "Relative Treatment Effect", "Marginal Risk Ratio","", "Reference (1.0)", "—", paste0(hr_est, " (", hr_lci, " to ", hr_uci, ")"), paste0(p_value_6),
+     "Relative Treatment Effect", "Marginal Risk Ratio","", "Reference (1.0)", "—", paste0(hr_est, " (", hr_lci, " to ", hr_uci, ")"), paste0(p_value_6), "",
      
 
         # Section 2: Absolute
-      "Absolute Time Metrics", "Median Time of Discharge from Tertiary Hospital (Weeks PMA)", "1", as.character(med_c1), as.character(med_i1), paste0("Difference: ", med_diff1, " weeks"), "—",
-      "Absolute Time Metrics", "", "2", as.character(med_c2), as.character(med_i2), paste0("Difference: ", med_diff2, " weeks"), "—",
+      "Absolute Time Metrics", "Median Time to Discharge Home Alive (Weeks PMA)", "1", as.character(med_c1), as.character(med_i1), paste0("Difference: ", med_diff1, " weeks PMA"), "—",
+      "Absolute Time Metrics", "", "2", as.character(med_c2), as.character(med_i2), paste0("Difference: ", med_diff2, " weeks PMA"), "—",
       "Absolute Time Metrics", "Not yet Discharged at 40 Weeks PMA", "1", paste0(prob_c1, "%"), paste0(prob_i1, "%"), paste0("Risk Difference: ", prob_diff1, "%"), "—",
      "Absolute Time Metrics", "", "2", paste0(prob_c2, "%"), paste0(prob_i2, "%"), paste0("Risk Difference: ", prob_diff2, "%"), "—",
-      "Absolute Time Metrics", "Restricted Mean Survival Time (RMST)", "1", paste0(rmst_c1, " weeks"), paste0(rmst_i1, " weeks"), paste0("RMST Difference: ", rmst_diff1, " weeks"), "-",
-     "Absolute Time Metrics", "", "2", paste0(rmst_c2, " weeks"), paste0(rmst_i2, " weeks"), paste0("RMST Difference: ", rmst_diff2, " weeks"), "-"
+      "Absolute Time Metrics", "Restricted Mean Survival Time (RMST)", "1", paste0(rmst_c1, " weeks PMA"), paste0(rmst_i1, " weeks PMA"), paste0("RMST Difference: ", rmst_diff1, " weeks PMA"), "-",
+     "Absolute Time Metrics", "", "2", paste0(rmst_c2, " weeks PMA"), paste0(rmst_i2, " weeks PMA"), paste0("RMST Difference: ", rmst_diff2, " weeks PMA"), "-"
      )
+
 
 # Tabulate
         publication_table_6.2 <- results_df_6.2 %>%
@@ -351,15 +365,17 @@ results_df_6.2 <- tibble::tribble(
               Control = md("**Control Group**"),
               Intervention = md("**Intervention Group**"),
               Effect = md("**Treatment Effect Estimate (95% Confidence Interval)**"),
-              P_Value = md("**P_Value**")
+              P_Value = md("**P_Value**"),
+              BH_P_Value = md("**B_H adjusted P_Value**")
+              
         ) %>%
         cols_align(align = "left", columns = Metric) %>%
-        cols_align(align = "center", columns = c(Stratum, Control, Intervention, Effect, P_Value)) %>%
+        cols_align(align = "center", columns = c(Stratum, Control, Intervention, Effect, P_Value, BH_P_Value)) %>%
         tab_footnote(
           footnote = "Stratum 1 = <28 weeks PMA, Stratum 2 = 28-32 weeks PMA.",
           locations = cells_column_labels(columns = Stratum)) %>%
          tab_footnote(
-          footnote = "Adjusted for treatment allocation, multiplicity, maternal antenatal steroids, gestational age stratum, infant sex, recruiting centre, and birth weight z-score modeled via a natural cubic spline matrix. Confidence intervals are derived from a fractional weighted bootstrap (fwb) with 1,000 replications.",
+          footnote = "Adjusted for treatment allocation, multiplicity, maternal antenatal steroids, gestational age stratum, infant sex, recruiting centre, and birth weight z-score modeled via a natural cubic spline matrix. Confidence intervals are derived from a fractional weighted bootstrap (fwb) with 1,000 replications. Predicted trial entry for Strata 1 is 23 weeks PMA and 28 weeks PMA for Strata 2.",
           locations = cells_body(columns = Metric, rows = 1)) %>%
         tab_footnote(
           footnote = paste0("Restricted to a maximum follow-up horizon (tau) of ", round(max_tau, 1), " weeks post-menstrual age."),
@@ -422,7 +438,7 @@ max_time <- max(curve_data6$time, na.rm = TRUE)
 
 # 3. DYNAMICALLY FORCE VISUAL 0% START AT THE EARLIEST DATA POINT
 # Finds the exact earliest time recorded for each stratum configuration
-baseline_anchors <- curve_data %>%
+baseline_anchors <- curve_data6 %>%
   group_by(rand_gp, ga_strata.f) %>%
   slice(1) %>% 
   mutate(
@@ -507,8 +523,6 @@ The data for these time-to-event estimands included the randomised eligible tria
 
 On average, participants in the intervention group face a 21% hazard of tertiary hospital discharge occurring at any given point in time compared to the control group (marginally averaged hazard ratio= 1.21; 95% CI: 1.06 to 1.41; p = <0.001).
 
-The hazard ratio (HR) and the marginal risk ratio (RR) address different questions. The HR indicates the difference in rate of tertiary hospital discharge across the whole time period. The RR indicates the average ratio in the cumulative probability of tertiary hospital discharge at the specific time point of discharge between the study groups.
-
 The intervention group was discharged from a tertiary hospital at a median time of approximately 0.5 weeks (3.5 days) less than the control group, they had a 6.9% less probability of still being in a tertiary hospital than the control group at 42 weeks PMA, and had a mean survival time of being discharged from a tertiary hospital that was approximately 0.7 weeks (5 days) less than the control group.
 
 
@@ -562,18 +576,30 @@ fit_S7 <- coxph( Surv(entry_pma, exit_pma, discharged_52pma) ~ rand_gp + multipl
 fit_summary_7 <- summary(fit_S7)
 
 ph_test_7 <- cox.zph(fit_S7)
-
-print("--- PROPORTIONAL HAZARDS TEST ---")
 print(ph_test_7)
 
     # Marginal effects: risk
-#S7_risk_marginal <- avg_comparisons(fit_S7, variables = "rand_gp", type = "risk", vcov = "fwb", R = 1000)
+
 set.seed(24372640)
-S7_risk_marginal <- avg_comparisons(fit_S7, variables = "rand_gp", type = "risk", comparison = "ratio") |>
-  inferences(method = "fwb", R = 1000)
+# S7_risk_marginal <- avg_comparisons(fit_S7, variables = "rand_gp", type = "expected", comparison = "lnratio", transform = exp) |>
+#   inferences(method = "fwb", R = 1000)
+
+pred_data_S7 <- data_S7 %>%
+  mutate(#entry_pma = case_when(ga_strata.f == "0" ~ 23,
+                               #ga_strata.f == "1" ~ 28),
+         exit_pma = 40)
+
+S7_risk_marginal <- avg_comparisons(fit_S7, variables = "rand_gp", type = "expected", 
+                                    comparison = "lnratio", transform = exp, vcov = FALSE,
+                                    newdata = pred_data_S7) |>
+                    inferences(method = "fwb", R = 1000)
+                                    
+#expected returns the cumulative hazrd
+#standard log relative risk scale
 
 S7_tab_marginal <- tidy(S7_risk_marginal)
 
+p_value_7 <- 2 * pnorm(-abs((S7_tab_marginal$estimate - 1)/S7_tab_marginal$std.error))
     
 aHR <- round(exp(coef(fit_S7)["rand_gp"]), digits = 2)
 conf_int <- round(exp(confint(fit_S7, "rand_gp")), digits = 2)
@@ -585,9 +611,7 @@ marg_Lower_95_CI = round((S7_tab_marginal$conf.low), digits = 2)
 marg_Upper_95_CI = round((S7_tab_marginal$conf.high), digits = 2)
 ##p_value <- S6_risk_marginal$p.value
 marg_HR <- round((S7_tab_marginal$estimate), digits = 2)
-p_value_7 <- round(S7_tab_marginal$p.value, digits = 3)
-
-target_variable <- "rand_gp"
+p_value_7 <- round(p_value_7, digits = 3)
 
 results_7 <- data.frame(
   estimate = aHR,
@@ -657,19 +681,19 @@ rmst_diff2   <- round(rmst_i2- rmst_c2, 1)
 
  # Combine results and format for reporting
 results_df_7.2 <- tibble::tribble(
-     ~Section, ~Metric, ~Stratum, ~Control, ~Intervention, ~Effect, ~P_Value,
+     ~Section, ~Metric, ~Stratum, ~Control, ~Intervention, ~Effect, ~P_Value, ~BH_P_Value,
 
         # Section 1: Relative
-     "Relative Treatment Effect", "Marginal Risk Ratio","", "Reference (1.0)", "—", paste0(hr_est, " (", hr_lci, " to ", hr_uci, ")"), paste0(p_value_7),
+     "Relative Treatment Effect", "Marginal Risk Ratio (at 40 weeks PMA)","", "Reference (1.0)", "—", paste0(hr_est, " (", hr_lci, " to ", hr_uci, ")"), paste0(p_value_7), "",
      
 
         # Section 2: Absolute
-      "Absolute Time Metrics", "Median Time to Discharge Home Alive (Weeks)", "1", as.character(med_c1), as.character(med_i1), paste0("Difference: ", med_diff1, " weeks"), "—",
-      "Absolute Time Metrics", "", "2", as.character(med_c2), as.character(med_i2), paste0("Difference: ", med_diff2, " weeks"), "—",
+      "Absolute Time Metrics", "Median Time to Discharge Home Alive (Weeks PMA)", "1", as.character(med_c1), as.character(med_i1), paste0("Difference: ", med_diff1, " weeks PMA"), "—",
+      "Absolute Time Metrics", "", "2", as.character(med_c2), as.character(med_i2), paste0("Difference: ", med_diff2, " weeks PMA"), "—",
       "Absolute Time Metrics", "Not yet Discharged at 40 Weeks PMA", "1", paste0(prob_c1, "%"), paste0(prob_i1, "%"), paste0("Risk Difference: ", prob_diff1, "%"), "—",
      "Absolute Time Metrics", "", "2", paste0(prob_c2, "%"), paste0(prob_i2, "%"), paste0("Risk Difference: ", prob_diff2, "%"), "—",
-      "Absolute Time Metrics", "Restricted Mean Survival Time (RMST)", "1", paste0(rmst_c1, " weeks"), paste0(rmst_i1, " weeks"), paste0("RMST Difference: ", rmst_diff1, " weeks"), "-",
-     "Absolute Time Metrics", "", "2", paste0(rmst_c2, " weeks"), paste0(rmst_i2, " weeks"), paste0("RMST Difference: ", rmst_diff2, " weeks"), "-"
+      "Absolute Time Metrics", "Restricted Mean Survival Time (RMST)", "1", paste0(rmst_c1, " weeks PMA"), paste0(rmst_i1, " weeks PMA"), paste0("RMST Difference: ", rmst_diff1, " weeks PMA"), "-",
+     "Absolute Time Metrics", "", "2", paste0(rmst_c2, " weeks PMA"), paste0(rmst_i2, " weeks PMA"), paste0("RMST Difference: ", rmst_diff2, " weeks PMA"), "-"
      )
 
 # Tabulate
@@ -683,15 +707,16 @@ results_df_7.2 <- tibble::tribble(
               Control = md("**Control Group**"),
               Intervention = md("**Intervention Group**"),
               Effect = md("**Treatment Effect Estimate (95% Confidence Interval)**"),
-              P_Value = md("**P_Value**")
+              P_Value = md("**P_Value**"),
+              BH_P_Value = md("**B_H adjusted P_Value**")
         ) %>%
         cols_align(align = "left", columns = Metric) %>%
-        cols_align(align = "center", columns = c(Stratum, Control, Intervention, Effect, P_Value)) %>%
+        cols_align(align = "center", columns = c(Stratum, Control, Intervention, Effect, P_Value, BH_P_Value)) %>%
         tab_footnote(
           footnote = "Stratum 1 = <28 weeks PMA, Stratum 2 = 28-32 weeks PMA.",
           locations = cells_column_labels(columns = Stratum)) %>%
          tab_footnote(
-          footnote = "Adjusted for treatment allocation, multiplicity, maternal antenatal steroids, gestational age stratum, infant sex, recruiting centre, and birth weight z-score modeled via a natural cubic spline matrix. Confidence intervals are derived from a fractional weighted bootstrap (fwb) with 1,000 replications.",
+          footnote = "Adjusted for treatment allocation, multiplicity, maternal antenatal steroids, gestational age stratum, infant sex, recruiting centre, and birth weight z-score modeled via a natural cubic spline matrix. Confidence intervals are derived from a fractional weighted bootstrap (fwb) with 1,000 replications. Predicted trial entry for Strata 1 is 23 weeks PMA and 28 weeks PMA for Strata 2",
           locations = cells_body(columns = Metric, rows = 1)) %>%
         tab_footnote(
           footnote = paste0("Restricted to a maximum follow-up horizon (tau) of ", round(max_tau, 1), " weeks post-menstrual age."),
@@ -731,7 +756,7 @@ curve_data <- curve_data %>%
     # Map Treatment Groups based on grid design (Odd rows = Control, Even rows = Intervention)
     rand_gp = case_when(
       strata %in% c("1", "3") ~ "Control Group",
-      strata %in% c("2", "4") ~ "Intervention Group"
+      strata %in% c("2", "4") ~ "Cycled Group"
     ),
     # Map Gestational Age Groups to your exact specifications
     ga_strata.f = case_when(
@@ -762,8 +787,8 @@ plot7 <- ggplot(curve_data, aes(x = time, y = cum_discharge, color = rand_gp, fi
   facet_wrap(~ga_strata.f) +   
   
   # Apply professional, colorblind-friendly medical hex palettes
-  scale_color_manual(values = c("#1F77B4", "#D62728")) +
-  scale_fill_manual(values = c("#1F77B4", "#D62728")) +
+  scale_color_manual(values = c("#A4CCEE", "#FAB580")) +
+  scale_fill_manual(values = c("#A4CCEE", "#FAB580")) +
   
   # Continuous scale cleaning 
   scale_y_continuous(labels = scales::label_number(scale = 100), 
@@ -815,6 +840,72 @@ ggsave(
 
 
 ggsave("km_plot7.png", plot = plot7, width = 11, height = 8, dpi = 300)
+
+##combine the strata
+
+curve_data <- surv_summary(fit_S7_curves, data = ref_grid7.2)
+
+# 2. Process data and explicitly inject your clinical cohort labels
+curve_data <- curve_data %>%
+  mutate(
+    # Map Treatment Groups based on grid design (Odd rows = Control, Even rows = Intervention)
+    rand_gp = case_when(
+      strata %in% c("1", "3") ~ "Control Group",
+      strata %in% c("2", "4") ~ "Intervention Group"
+    ),
+    # Map Gestational Age Groups to your exact specifications
+    ga_strata.f = case_when(
+      strata %in% c("1", "2") ~ "<28 weeks PMA",
+      strata %in% c("3", "4") ~ "28-<32 weeks PMA"
+    ),
+    # Invert the Survival Function (S(t)) to build Cumulative Discharge Curves
+    cum_discharge    = 1 - surv,
+    lower_discharge  = 1 - upper, # Upper survival threshold becomes lower discharge bound
+    upper_discharge  = 1 - lower  # Lower survival threshold becomes upper discharge bound
+  )
+
+# Dynamically find the maximum time in your dataset to close the window smoothly
+max_time <- max(curve_data$time, na.rm = TRUE)
+
+# 3. Render the Publication-Quality Faceted Plot Matrix
+plot7_all <- ggplot(curve_data, aes(x = time, y = cum_discharge, color = rand_gp, fill = rand_gp)) +
+  # Continuous step geometric paths for survival representations
+  geom_step(size = 1) +
+  # Shaded 95% Confidence Interval Ribbons
+  geom_ribbon(aes(ymin = lower_discharge, ymax = upper_discharge), alpha = 0.12, color = NA) +
+  
+  
+   # Apply requested professional medical hex palettes mapping directly to the new strings
+  scale_color_manual(values = c("Control Group" = "#1F3B73", "Intervention Group" = "#F1B434")) +
+  scale_fill_manual(values = c("Control Group" = "#1F3B73", "Intervention Group" = "#F1B434")) +
+  
+  
+  # Continuous scale cleaning 
+  scale_y_continuous(labels = scales::label_number(scale = 100), 
+                     limits = c(0, 1), 
+                     expand = c(0.01, 0.01)) +
+  
+  # Truncate the timeline window safely to start at week 32
+  coord_cartesian(xlim = c(32, max_time)) +
+  
+  # Labels and Structural Typography (titles removed from scale arguments)
+  labs(
+    x = "Weeks PMA",
+    y = "Cumulative Probability of Discharge (%)",
+    color = NULL,
+    fill  = NULL
+  ) +
+  
+  # Minimalist Journal Theme Overrides (Nature/Elsevier Standard)
+  theme_classic(base_size = 14) +
+  theme(
+    axis.text          = element_text(color = "black", size = 18),
+    axis.title         = element_text(face = "bold", size = 18), 
+    legend.position    = "bottom",
+    legend.text        = element_text(size = 20),
+    legend.title       = element_blank(),                       
+    legend.background  = element_blank(),
+  )
 ```
 
 The data for these time-to-event estimands included the randomised participants (N = 744). Of these participants, 55 were missing their date of discharge home: 42 of these participants had withdrawn from the study (censored at date of withdrawal), 10 had died (censored at 52 weeks PMA) and 2 were missing their date of discharge home alive. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
