@@ -39,7 +39,9 @@ library(purrr)
 library(AER)
 options(survfit.rmean = "common")
 
-data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.1.csv", stringsAsFactors = FALSE, header = TRUE)
+# data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.1.csv", stringsAsFactors = FALSE, header = TRUE)
+
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.2.csv", stringsAsFactors = FALSE, header = TRUE)
 
 data_raw <- data_raw %>%
    mutate(nonrand_gp = case_when(study_id == "CD-04011" ~ 1, .default = nonrand_gp)) %>%#intervention
@@ -182,7 +184,7 @@ add_rcs_splines <- function(data, x_var, probs = c(0.1, 0.4, 0.6, 0.9)) {
 
 
 data_S1 <- data_elig %>%
-  filter(wk36_present == 1 | death_36wpma == 1) %>% #1.1: 691 (#1.2: 689)
+  filter(wk36_present == 1 | death_36wpma == 1) %>%  (#1.2: 689)
   dplyr::select(death_36wpma,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(death_36wpma,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -240,7 +242,7 @@ There was insufficient evidence to conclude a significant difference in the risk
 #filter out those who died <= 36wPMA
 
 data_S2 <- data_elig %>%
-  filter(death_36wpma == 0 | is.na(death_36wpma)) %>% #735
+  filter(death_36wpma != 1 | is.na(death_36wpma)| !is.na(wpma36_weight_Z)) %>% #735
   dplyr::select(study_id,wpma36_weight_Z, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z,  sex, recr_hosp.factor) %>%
   tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
    add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -315,7 +317,7 @@ There was insufficient evidence to conclude a significant difference in the mean
 ##SAMPLE CODE for GLM - adjusted difference in mean with 95%CI*****
 
 data_S3 <- data_elig %>%
-  filter(death_36wpma == 0 | is.na(death_36wpma)) %>% #735
+  filter(death_36wpma != 1 | is.na(death_36wpma) | !is.na(wpma36_length_Z)) %>% #735
   dplyr::select(study_id,wpma36_length_Z, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -449,7 +451,7 @@ print(results_4)
 
 
 ```
-#The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised head circumference Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 17 did not have their head circumference measured at 36.0 weeks PMA, leaving 655 participants available for analysis. The head circumference Z-scores of these 25 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status.1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
+The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised head circumference Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 17 did not have their head circumference measured at 36.0 weeks PMA, leaving 655 participants available for analysis. The head circumference Z-scores of these 25 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status.1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate.
 
 There was insufficient evidence to detect a difference in mean standardised head circumference Z scores between the intervention and control groups (adjusted mean difference -0.09, 95% CI: -0.24 to 0.06, B-H adjusted p-value = 0.225).
 
@@ -531,7 +533,7 @@ There was no evidence the adjusted mean growth velocity differed significantly b
 ```{r Estimand_S8, echo=FALSE, message = FALSE, warning = FALSE}
 
 data_S8 <- data_elig %>%
-  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>%  #700
+  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>%  #700 #698
   dplyr::select(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -758,7 +760,7 @@ There was a  difference in risk of NEC Stage II or greater between the intervent
 
 
 data_S15 <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | ROP_2plus == 1) %>% #688
+  filter(wk44_present == 1 | death_44wpma == 1 | ROP_2plus == 1) %>% #688 #561
   dplyr::select(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   #dplyr::select(where(~ any(is.na(.)))) %>% dth_yn has 2 NA values
@@ -813,7 +815,7 @@ There was insufficient evidence to conclude a difference in risk of ROP Stage II
 #Fit Poisson regression model - rate ratio
 
 data_S18 <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | sepsis_proven_yn == 1) %>% #691
+  filter(wk44_present == 1 | death_44wpma == 1) %>% #691 #569
   dplyr::select(study_id,sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>% 
   tidyr::drop_na(sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   #dplyr::select(where(~ any(is.na(.))))# 
@@ -1012,7 +1014,9 @@ big_table <- rbind(results_1,results_2,results_3,results_4,results_5,#results_6,
 
 print(big_table)
 
+```
 
+```{r data_S8 table, echo=FALSE, message = FALSE, warning = FALSE}
 # Updated for gtsummary v2.0+ 
 data_S8_tab <- data_elig %>%
   filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1)  %>% #698 - of the 53 withdrawals, 9 had BPD
@@ -1030,7 +1034,10 @@ data_S8_tab <- data_elig %>%
   )
 
 data_S8_tab
+```
 
+
+```{r  total data_S8 table, echo=FALSE, message = FALSE, warning = FALSE}
 total_S8_tab <- data_elig %>% 
 filter(!(BPD == 0 & withdraw_36wpma == 1)) %>%
   tbl_summary(
@@ -1045,10 +1052,12 @@ filter(!(BPD == 0 & withdraw_36wpma == 1)) %>%
 
 total_S8_tab
 
+```
 
 
+```{r  data_S1 table, echo=FALSE, message = FALSE, warning = FALSE}
 data_S1_tab <- data_elig %>%
-  filter(withdraw_36wpma == 0) %>% #691 -> 53 withdrawals which ties in with the CONSORT
+  filter(wk36_present == 1 | death_36wpma == 1) %>% #691 -> 53 withdrawals which ties in with the CONSORT
   mutate(death_36wpma = as.factor(death_36wpma),
          rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention"))
          ) %>%
@@ -1066,6 +1075,10 @@ data_S1_tab <- data_elig %>%
   )
 
 data_S1_tab
+
+```
+
+```{r  growth table, echo=FALSE, message = FALSE, warning = FALSE}
 
 growth_table <- data_elig %>%
   filter(death_36wpma == 0) %>%
@@ -1090,6 +1103,9 @@ growth_table <- data_elig %>%
 # 3. Print the table
 growth_table
 
+```
+
+```{r  nec_2 table, echo=FALSE, message = FALSE, warning = FALSE}
 
 ###nec_2 
 
@@ -1116,6 +1132,10 @@ data_S14_table <- data_elig %>%
 # 3. Print the table
 data_S14_table
 
+```
+
+```{r  ROP_2 table, echo=FALSE, message = FALSE, warning = FALSE}
+
 ##ROP2-plus
 
 data_S15_tab <- data_elig %>%
@@ -1138,6 +1158,9 @@ data_S15_tab <- data_elig %>%
 # 3. Print the table
 data_S15_tab
 
+```
+
+```{r  S-18 table, echo=FALSE, message = FALSE, warning = FALSE}
 ###
 
 data_S18_tab <- data_elig %>%
