@@ -81,7 +81,7 @@ data <- data1 %>%
          as1.new = as.numeric(as1.new),
          as5.new = as.numeric(as5.new),
          cord_ph = as.numeric(cord_ph),
-         IVH_first_final.factor = as.factor(IVH_first_final),
+         IVH_pre_rand  = case_when(is.na(IVH_first_final) ~ 5, .default = IVH_first_final),
          rand_gp = case_when(study_id == "CD-04011" ~ 1, .default = rand_gp),
          rand_gp = case_when(rand_gp == 2 ~ 0, .default = rand_gp),
          nonrand_gp = case_when(nonrand_gp == 2 ~ 0, .default = nonrand_gp),
