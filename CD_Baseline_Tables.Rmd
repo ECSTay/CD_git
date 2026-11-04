@@ -120,10 +120,13 @@ data2 <- df_multi %>%
 data2 <- data2[,c("study_id","multiple_type")]
 
 data <- data %>%
-  left_join(data2, by = "study_id")
+  left_join(data2, by = "study_id")%>%
+  filter(study_id != "CD-09025") # this baby should not have been randomised
+
          
 data_elig <- data %>%
-  filter(rand_sib == 1)
+  filter(rand_sib == 1) %>%
+  filter(study_id != "CD-09025") # this baby should not have been randomised
 
 data_sib <- data %>%
   filter(rand_sib == 0)
