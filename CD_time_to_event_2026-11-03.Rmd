@@ -463,7 +463,7 @@ curve_data6 <- surv_summary(fit_S6_curves, data = ref_grid6.2)
     
     labs(
       x = "Weeks PMA",
-      y = "Cumulative Probability of Discharge (%)"
+      y = "Cumulative probability of discharge (%)"
     ) +
     
     theme_minimal() + 
@@ -776,7 +776,7 @@ library(dplyr)
     
     labs(
       x = "Weeks PMA",
-      y = "Cumulative Probability of Discharge (%)"
+      y = "Cumulative probability of discharge (%)"
     ) +
     
     theme_minimal() + 
