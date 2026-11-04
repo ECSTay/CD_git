@@ -81,7 +81,8 @@ data <- data1 %>%
          as1.new = as.numeric(as1.new),
          as5.new = as.numeric(as5.new),
          cord_ph = as.numeric(cord_ph),
-         IVH_pre_rand  = case_when(is.na(IVH_first_final) ~ 5, .default = IVH_first_final),
+         IVH_prerand = case_when(is.na(IVH_first_final) ~ 5, .default = IVH_first_final),
+         IVH_prerand.f  = factor(IVH_prerand),
          rand_gp = case_when(study_id == "CD-04011" ~ 1, .default = rand_gp),
          rand_gp = case_when(rand_gp == 2 ~ 0, .default = rand_gp),
          nonrand_gp = case_when(nonrand_gp == 2 ~ 0, .default = nonrand_gp),
@@ -147,7 +148,8 @@ data2 <- df_multi %>%
 data2 <- data2[,c("study_id","multiple_type")]
 
 data <- data %>%
-  left_join(data2, by = "study_id")
+  left_join(data2, by = "study_id") %>%
+  filter(study_id != "CD-09025") # this baby should not have been randomised
          
 data_elig <- data %>%
   filter(rand_sib == 1)
@@ -205,7 +207,7 @@ table_demo <- function(data) {
     filter(ga_strata == 1) %>%
     filter(withdraw_36wpma == 1) %>% #27
     dplyr::select("sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z","b_hc", 
-    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata","IVH_first_final.factor") %>%
+    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata","IVH_prerand.f") %>%
     tbl_summary(by = rand_gp,
       percent = "column",  # Show percentages by column for most variables
       missing ="ifany", missing_text = "(Missing)",
@@ -218,7 +220,7 @@ table_demo <- function(data) {
         Birth_HC_Z ~ "continuous",
         as1.new ~ "continuous2",
         as5.new ~ "continuous2",
-        IVH_first_final.factor ~ "categorical"
+        IVH_prerand.f ~ "categorical"
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N(%) for categorical variables
@@ -233,7 +235,7 @@ table_demo <- function(data) {
         as1.new ~ 'APGAR score at 1 minute', 
         as5.new ~ 'APGAR score at 5 minutes', 
         cord_ph ~ 'Cord pH',
-        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+        IVH_prerand.f ~ 'IVH Grade prior to enrolment'
       ) 
     ) %>%
         modify_spanning_header(c("stat_1", "stat_2") ~ "**Randomised**") 
@@ -257,7 +259,7 @@ table_demo2 <- function(data) {
     filter(ga_strata == 2) %>%
     filter(withdraw_36wpma == 1) %>% #26
     dplyr::select("sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z","b_hc", 
-    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata","IVH_first_final.factor") %>%
+    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata","IVH_prerand.f") %>%
     tbl_summary(by = rand_gp,
       percent = "column",  # Show percentages by column for most variables
       missing ="ifany", missing_text = "(Missing)",
@@ -270,7 +272,7 @@ table_demo2 <- function(data) {
         Birth_HC_Z ~ "continuous",
         as1.new ~ "continuous2",
         as5.new ~ "continuous2",
-        IVH_first_final.factor ~ "categorical"
+        IVH_prerand.f ~ "categorical"
         
       ),
       statistic = list(
@@ -286,7 +288,7 @@ table_demo2 <- function(data) {
         as1.new ~ 'APGAR score at 1 minute', 
         as5.new ~ 'APGAR score at 5 minutes', 
         cord_ph ~ 'Cord pH',
-        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+        IVH_prerand.f ~ 'IVH Grade prior to enrolment'
       ) 
     ) %>%
         modify_spanning_header(c("stat_1", "stat_2") ~ "**RandTwo**")
