@@ -21,36 +21,8 @@ library(Amelia)
 library(lubridate)
 library(parsnip)
 library(censored)
-library(survival)
-library(broom)
-library(rms)
-library(mice)
-library(survRM2)
 library(sandwich)
-library(lmtest)
-library(survminer)
-library(knitr)
-library(gt)
-library(gtsummary)
-library(dplyr)
-library(stringr)
-library(officedown)
-library(Hmisc)
-library(tidyverse)
-library(kableExtra)
-library(logbin)
-library(Amelia)
-library(lubridate)
-library(parsnip)
-library(censored)
-library(survival)
-library(broom)
-library(rms)
-library(mice)
-library(survRM2)
-library(sandwich)
-library(lmtest)
-library(survminer)
+
 
 data1 <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.1.csv", stringsAsFactors = FALSE, header = TRUE)
 
@@ -81,7 +53,8 @@ data <- data1 %>%
          as1.new = as.numeric(as1.new),
          as5.new = as.numeric(as5.new),
          cord_ph = as.numeric(cord_ph),
-         IVH_prerand = case_when(is.na(IVH_first_final) ~ 5, .default = IVH_first_final)
+         IVH_prerand = case_when(is.na(IVH_first_final) ~ 5, .default = IVH_first_final),
+         IVH_prerand.f  = factor(IVH_prerand),
          rand_gp = case_when(study_id == "CD-04011" ~ 1, .default = rand_gp),
          rand_gp = case_when(rand_gp == 2 ~ 0, .default = rand_gp),
          nonrand_gp = case_when(nonrand_gp == 2 ~ 0, .default = nonrand_gp),
@@ -191,8 +164,176 @@ data_sib <- data_sib %>%
 
 ```
 
+
+##Offspring randomised overall
+
+```{r tab.cap="Offspring demographic characteristics - Randomised", tab.cap.style = "Caption", tab.id = "T1", echo = F}
+
+# 1. Prepare data and transform ga_strata into a descriptive factor
+analysis_data <- data_off %>%
+  filter(rand_sib == 1) %>% 
+  dplyr::select(
+    "sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z", "b_hc", 
+    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "rand_gp", "rand_sib", "ga_strata", "IVH_prerand.f"
+  ) %>%
+  mutate(ga_strata = factor(ga_strata, 
+                            levels = c(1, 2),
+                            labels = c("<28 Weeks PMA", "28-32 Weeks PMA"))) 
+
+# 2. Reusable baseline table layout function
+generate_base_table <- function(data_input, by_var) {
+  data_input %>%
+    tbl_summary(
+      by = !!sym(by_var),
+      percent = "column",
+      missing = "ifany", 
+      missing_text = "(Missing)",
+      digits = all_categorical() ~ c(0, 0),
+      type = list(
+        sex.factor ~ "categorical",  
+        multi.factor ~ "categorical",
+        ga_calc ~ "continuous2", 
+        PNA_rand ~ "continuous2",
+        bw ~ "continuous2",
+        Birth_weight_Z ~ "continuous2",
+        b_hc ~ "continuous2",
+        Birth_HC_Z ~ "continuous2",
+        as1.new ~ "continuous2",
+        as5.new ~ "continuous2",
+        cord_ph ~ "continuous2",
+        IVH_prerand.f ~ "categorical"
+      ),
+      statistic = list(
+        all_categorical() ~ "{n} / {N} ({p}%)",
+        all_continuous() ~ c("{mean} ({sd})", "{median} ({p25}, {p75})"), 
+        c(as1.new, as5.new) ~ c("{median} ({p25}, {p75})")
+      ),
+      label = list(
+        sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
+        PNA_rand ~ 'PNA at randomisation (hours)',
+        bw ~ 'Birth weight (g)', Birth_weight_Z ~ 'Birth weight Z-score',
+        b_hc ~ 'Birth head circumference (cm)',         
+        Birth_HC_Z ~ 'Birth head circumference Z-score', 
+        as1.new ~ 'APGAR score at 1 minute', 
+        as5.new ~ 'APGAR score at 5 minutes', 
+        cord_ph ~ 'Cord pH',
+        IVH_prerand.f ~ 'IVH Grade prior to enrolment'
+      )
+    )
+}
+
+# 3. Stratify the table and inject dynamic sample size {n} into headers
+table_stratified <- analysis_data %>%
+  tbl_strata(
+    strata = ga_strata, 
+    .tbl_fun = ~ generate_base_table(.x, by_var = "rand_gp"),
+    .header = "**{strata} (N={n})**" 
+  )
+
+# 4. Create the final total columns with a matching N header
+total_n <- nrow(analysis_data) 
+
+table_total <- generate_base_table(analysis_data, by_var = "rand_gp") %>%
+  modify_header(all_stat_cols() ~ "**{level}**") %>%
+  modify_spanning_header(all_stat_cols() ~ paste0("**All Strata Combined (N=", total_n, ")**")) 
+
+# 5. Merge everything side-by-side
+final_table <- tbl_merge(
+  tbls = list(table_stratified, table_total),
+  tab_spanner = FALSE 
+)
+
+# Output final table
+final_table
+```
+
+##Offspring siblings overall
+
+```{r tab.cap="Offspring demographic characteristics - Siblings", tab.cap.style = "Caption", tab.id = "T2", echo = F}
+
+# 1. Prepare data and transform ga_strata into a descriptive factor
+analysis_data_sib <- data_sib %>%
+  #filter(rand_sib == 0) %>% 
+  dplyr::select(
+    "sex.factor", "multi.factor", "ga_calc", "PNA_rand", "bw", "Birth_weight_Z", "b_hc", 
+    "Birth_HC_Z", "as1.new", "as5.new", "cord_ph", "nonrand_gp", "rand_sib", "ga_strata", "IVH_prerand.f"
+  ) %>%
+  mutate(ga_strata = factor(ga_strata, 
+                            levels = c(1, 2),
+                            labels = c("<28 Weeks PMA", "28-32 Weeks PMA"))) 
+
+# 2. Reusable baseline table layout function
+generate_base_table <- function(data_input, by_var) {
+  data_input %>%
+    tbl_summary(
+      by = !!sym(by_var),
+      percent = "column",
+      missing = "ifany", 
+      missing_text = "(Missing)",
+      digits = all_categorical() ~ c(0, 0),
+      type = list(
+        sex.factor ~ "categorical",  
+        multi.factor ~ "categorical",
+        ga_calc ~ "continuous2", 
+        PNA_rand ~ "continuous2",
+        bw ~ "continuous2",
+        Birth_weight_Z ~ "continuous2",
+        b_hc ~ "continuous2",
+        Birth_HC_Z ~ "continuous2",
+        as1.new ~ "continuous2",
+        as5.new ~ "continuous2",
+        cord_ph ~ "continuous2",
+        IVH_prerand.f ~ "categorical"
+      ),
+      statistic = list(
+        all_categorical() ~ "{n} / {N} ({p}%)",
+        all_continuous() ~ c("{mean} ({sd})", "{median} ({p25}, {p75})"), 
+        c(as1.new, as5.new) ~ c("{median} ({p25}, {p75})")
+      ),
+      label = list(
+        sex.factor ~ 'Sex', multi.factor ~ "Multiple birth", ga_calc ~ "Gestational age at birth (weeks PMA)",
+        PNA_rand ~ 'PNA at randomisation (hours)',
+        bw ~ 'Birth weight (g)', Birth_weight_Z ~ 'Birth weight Z-score',
+        b_hc ~ 'Birth head circumference (cm)',         
+        Birth_HC_Z ~ 'Birth head circumference Z-score', 
+        as1.new ~ 'APGAR score at 1 minute', 
+        as5.new ~ 'APGAR score at 5 minutes', 
+        cord_ph ~ 'Cord pH',
+        IVH_prerand.f ~ 'IVH Grade prior to enrolment'
+      )
+    )
+}
+
+# 3. Stratify the table and inject dynamic sample size {n} into headers
+table_stratified_sib <- analysis_data_sib %>%
+  tbl_strata(
+    strata = ga_strata, 
+    .tbl_fun = ~ generate_base_table(.x, by_var = "nonrand_gp"),
+    .header = "**{strata} (N={n})**" 
+  )
+
+# 4. Create the final total columns with a matching N header
+total_n <- nrow(analysis_data_sib) 
+
+table_total_sib <- generate_base_table(analysis_data_sib, by_var = "rand_gp") %>%
+  modify_header(all_stat_cols() ~ "**{level}**") %>%
+  modify_spanning_header(all_stat_cols() ~ paste0("**All Strata Combined (N=", total_n, ")**")) 
+
+# 5. Merge everything side-by-side
+final_table_sib <- tbl_merge(
+  tbls = list(table_stratified_sib, table_total_sib),
+  tab_spanner = FALSE 
+)
+
+# Output final table
+final_table_sib
+```
+
+
 ## Offspring factors - Strata 1 - randomised and eligible
-```{r tab.cap="Offspring demographic characteristics - Strata 1", tab.cap.style = "Caption", tab.id = "T1", echo = F}
+
+
+```{r tab.cap="Offspring demographic characteristics - Strata 1", tab.cap.style = "Caption", tab.id = "T3", echo = F}
 
 data_off_rand <- data_off
 
@@ -217,7 +358,7 @@ table_demo <- function(data) {
         Birth_HC_Z ~ "continuous",
         as1.new ~ "continuous2",
         as5.new ~ "continuous2",
-        IVH_first_final.factor ~ "categorical"
+        IVH_prerand.f ~ "categorical"
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N(%) for categorical variables
@@ -245,7 +386,7 @@ table_demo(data_off_rand)
 
 ## Offspring factors - Strata 1 - siblings
 
-```{r tab.cap="Offspring demographic characteristics - Strata 1 - siblings", tab.cap.style = "Caption", tab.id = "T1", echo = F}
+```{r tab.cap="Offspring demographic characteristics - Strata 1 - siblings", tab.cap.style = "Caption", tab.id = "T4", echo = F}
  
 
 data_off_sibs <- data_sib
@@ -269,7 +410,7 @@ table_demo_sibs <- function(data) {
         Birth_HC_Z ~ "continuous",
         as1.new ~ "continuous2",
         as5.new ~ "continuous2",
-        IVH_first_final.factor ~ "categorical"
+        IVH_prerand.f ~ "categorical"
       ),
       statistic = list(
         all_categorical() ~ "{n} / {N} ({p}%)",  # n/N (%) for categorical variables
@@ -284,7 +425,7 @@ table_demo_sibs <- function(data) {
         as1.new ~ 'APGAR score at 1 minute', 
         as5.new ~ 'APGAR score at 5 minutes', 
         cord_ph ~ 'Cord pH',
-        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+        IVH_prerand.f ~ 'IVH Grade prior to enrolment'
       ) 
     ) %>%
         modify_spanning_header(c("stat_1", "stat_2") ~ "**Siblings**") 
@@ -298,7 +439,7 @@ table_demo_sibs(data_off_sibs)
 
 ## Offspring factors - Strata 2 - randomised and eligible for analysis
 
-```{r tab.cap="Offspring demographic characteristics - Strata 2", tab.cap.style = "Caption", tab.id = "T2", echo = F}
+```{r tab.cap="Offspring demographic characteristics - Strata 2", tab.cap.style = "Caption", tab.id = "T5", echo = F}
 data_off_rand2 <- data_off
 
 data_off_rand2$rand_gp.factor = factor(data_off$rand_gp, levels = c("0","1"), labels = c("Control", "Intervention"))
@@ -337,7 +478,7 @@ table_demo2 <- function(data) {
         as1.new ~ 'APGAR score at 1 minute', 
         as5.new ~ 'APGAR score at 5 minutes', 
         cord_ph ~ 'Cord pH',
-        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+        IVH_prerand.f ~ 'IVH Grade prior to enrolment'
       ) 
     ) %>%
         modify_spanning_header(c("stat_1", "stat_2") ~ "**RandTwo**")
@@ -350,7 +491,7 @@ table_demo2(data_off_rand2)
 
 ## ## Offspring factors - Strata 2 - siblings
 
-```{r tab.cap="Offspring demographic characteristics - Strata 2 - siblings", tab.cap.style = "Caption", tab.id = "T1", echo = F}
+```{r tab.cap="Offspring demographic characteristics - Strata 2 - siblings", tab.cap.style = "Caption", tab.id = "T5", echo = F}
 
 data_off_sibs2 <- data_sib
 
@@ -388,7 +529,7 @@ table_demo_sibs2 <- function(data) {
         as1.new ~ 'APGAR score at 1 minute', 
         as5.new ~ 'APGAR score at 5 minutes', 
         cord_ph ~ 'Cord pH',
-        IVH_first_final.factor ~ 'IVH Grade prior to enrolment'
+        IVH_prerand.f~ 'IVH Grade prior to enrolment'
       ) 
     ) %>%
         modify_spanning_header(c("stat_1", "stat_2") ~ "**SiblingsTwo**") 
@@ -401,7 +542,7 @@ table_demo_sibs2(data_off_sibs2)
 
 ## Maternal factors - Strata 1
 
-```{r tab.cap="Maternal demographic characteristics - Strata 1", tab.cap.style = "Caption", tab.id = "T4", echo=FALSE}
+```{r tab.cap="Maternal demographic characteristics - Strata 1", tab.cap.style = "Caption", tab.id = "T6", echo=FALSE}
 
 # Function to generate a table for a specific brand
 table_demo_mat_1 <- function(data) {
@@ -460,7 +601,7 @@ table_demo_mat_1(data)
 \newpage
 ## Maternal factors - Strata 2
 
-```{r tab.cap="Maternal demographic characteristics - Strata 2", tab.cap.style = "Caption", tab.id = "T5", echo=FALSE}
+```{r tab.cap="Maternal demographic characteristics - Strata 2", tab.cap.style = "Caption", tab.id = "T7", echo=FALSE}
 
 # Function to generate a table for a specific brand
 table_demo_mat <- function(data) {
