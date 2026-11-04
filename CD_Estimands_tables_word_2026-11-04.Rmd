@@ -20,7 +20,7 @@ library(tidyr)
 library(MASS)
 
 
-data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.0.csv", stringsAsFactors = FALSE, header = TRUE)
+data_raw <- read.csv("C:/Users/ETay/Documents/Work documents/CIRCA DIEM/Data/short_term_outcome_data_v1.2.csv", stringsAsFactors = FALSE, header = TRUE)
 
 
 data_raw <- data_raw %>%
@@ -161,12 +161,17 @@ data_10_sib <- data_sib %>%
 ## the right shift of the SpO2/PiO2 curve at 36.0 w PMA.****
 #Participants and allocated siblings from multiple births
 
-shift.strata <- data_10_elig |>
+base_data <- data_10_elig |>
   dplyr::select(ga_strata, rand_gp, Shift..kPa.) |>
-  mutate(strata = case_when(ga_strata == "1" ~ "<28 weeks",
-                            ga_strata == "2" ~ "28 to <32 weeks",
-                            .default = "Unknown strata")) |>
-  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata"))) |>
+  mutate(strata = case_when(
+    ga_strata == "1" ~ "<28 weeks",
+    ga_strata == "2" ~ "28 to <32 weeks",
+    .default = "Unknown strata"
+  )) |>
+  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))
+
+# 2. Build the stratified table using tbl_strata
+table_stratified <- base_data |>
   tbl_strata(
     strata = strata,
     .tbl_fun =
@@ -176,15 +181,28 @@ shift.strata <- data_10_elig |>
                   digits = all_continuous() ~ 2,
                   label = list(Shift..kPa. = "Right shift (kPa)"),
                   missing_text = "(Missing)") |>
-      # RIGHT WAY TO UPDATE HEADERS:
-      # This updates the treatment column headers (e.g., Control and Intervention)
       modify_header(all_stat_cols() ~ "**{level}**, N = {n}") 
+  )
+
+# 3. Build the unstratified (Combined) table
+table_combined <- base_data |>
+  tbl_summary(
+    by = rand_gp,
+    statistic = all_continuous() ~ "{median} ({p25},{p75})",
+    digits = all_continuous() ~ 2,
+    label = list(Shift..kPa. = "Right shift (kPa)"),
+    missing_text = "(Missing)"
   ) |>
-  modify_caption("**Table 1.** Summary of shift of the SpO2/PIO2 curve (kPa) at 36.0wks PMA stratified by gestational age among the randomised participants.")
+  modify_header(all_stat_cols() ~ "**{level}**, N = {n}")
 
+# 4. Merge them together and label the spans
+final_table_shift <- tbl_merge(
+  tbls = list(table_stratified, table_combined),
+  tab_spanner = c(FALSE, "**Combined Strata**") # FALSE keeps original strata spans untouched
+)
 
-shift.strata
-
+# Print the final table
+final_table_shift
 
 
 ## Unadjusted median (with 25th and 75th percentiles) for intervention and control groups by randomisation status and prematurity strata - table
@@ -197,37 +215,49 @@ shift.strata
 #Participants and allocated siblings from multiple births
 
 
-library(dplyr)
-library(gtsummary)
-
-shift.strata.nonrand <- data_10_sib |>
+base_data_sib <- data_10_sib |>
   dplyr::select(ga_strata, nonrand_gp, Shift..kPa.) |>
-  mutate(
-    strata = case_when(
-      ga_strata == "1" ~ "<28 weeks",
-      ga_strata == "2" ~ "28 to <32 weeks",
-      .default = "Unknown strata"
-    ),
-    strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata"))
-  ) |> # Changed from %>% to |> for consistency
+  mutate(strata = case_when(
+    ga_strata == "1" ~ "<28 weeks",
+    ga_strata == "2" ~ "28 to <32 weeks",
+    .default = "Unknown strata"
+  )) |>
+  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))
+
+# 2. Build the stratified table using tbl_strata
+table_stratified_sib <- base_data_sib |>
   tbl_strata(
     strata = strata,
-    .tbl_fun = function(x) { # Explicitly declare the dataframe input
-      x |>
-        tbl_summary(
-          by = nonrand_gp,
-          type = list(Shift..kPa. ~ "continuous"),
-          statistic = all_continuous() ~ "{median} ({p25}, {p75})",
-          digits = all_continuous() ~ 2,
-          label = list(Shift..kPa. ~ "Right shift (kPa)"), # Fixed = to ~ for label mapping
-          missing_text = "(Missing)"
-        ) |>
-        modify_header(all_stat_cols() ~ "**{level}**, N = {n}")
-    }
-  ) |>
-  modify_caption("**Table 2.** Summary of shift of the SpO2/PIO2 curve (kPa) at 36.0wks PMA stratified by gestational age among the siblings.")
+    .tbl_fun =
+      ~ .x |>
+      tbl_summary(by = nonrand_gp,
+                  statistic = all_continuous() ~ "{median} ({p25},{p75})",
+                  digits = all_continuous() ~ 2,
+                  label = list(Shift..kPa. = "Right shift (kPa)"),
+                  missing_text = "(Missing)") |>
+      modify_header(all_stat_cols() ~ "**{level}**, N = {n}") 
+  )
 
-shift.strata.nonrand
+# 3. Build the unstratified (Combined) table
+table_combined_sib <- base_data_sib |>
+  tbl_summary(
+    by = nonrand_gp,
+    statistic = all_continuous() ~ "{median} ({p25},{p75})",
+    digits = all_continuous() ~ 2,
+    label = list(Shift..kPa. = "Right shift (kPa)"),
+    missing_text = "(Missing)"
+  ) |>
+  modify_header(all_stat_cols() ~ "**{level}**, N = {n}")
+
+# 4. Merge them together and label the spans
+final_table_shift_sib <- tbl_merge(
+  tbls = list(table_stratified_sib, table_combined_sib),
+  tab_spanner = c(FALSE, "**Combined Strata**") # FALSE keeps original strata spans untouched
+)
+
+# Print the final table
+final_table_shift_sib
+
 ## Unadjusted median (with 25th and 75th percentiles) for intervention and control groups by randomisation status and prematurity strata - table
 ```
 
@@ -240,8 +270,6 @@ shift.strata.nonrand
 ## grade III/IV intraventricular haemorrhage (IVH) and PVL at ≤36.0 w PMA (PVL as well)
 ## severity of BDP at 36 wk - Estimand S9
 
-#Randomised trial eligible participants and allocated siblings from multi births
-#Setting Factors(will create new variable for factors)
 
 data_elig_AE_rand <- data_elig %>%
   mutate(rand_gp = factor(rand_gp, levels = c ("0","1"), labels = c("Control", "Intervention")),
@@ -250,62 +278,164 @@ data_elig_AE_rand <- data_elig %>%
          IVH = factor(data_elig$IVH, levels = c("0","1","2","3","4")))
 
 
-# 1. Prepare data with safe factor levels
 data_prep <- data_elig_AE_rand |> 
-  #filter(wk36_present == 1) %>%
   dplyr::select(ga_strata, rand_gp, IVH, PVL, BPD) |> 
+  filter(ga_strata %in% c(1, 2)) |> 
   mutate(
     strata_gp = case_when(
       ga_strata == 1 ~ "<28 weeks", 
-      ga_strata == 2 ~ "28 to <32 weeks", 
-      .default = "Unknown strata"
+      ga_strata == 2 ~ "28 to <32 weeks"
     ),
-    strata_gp = factor(strata_gp, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata"))
+    strata_gp = factor(strata_gp, levels = c("<28 weeks", "28 to <32 weeks"))
   )
 
 outcomes <- c("IVH", "PVL", "BPD")
 
-# 2. Map over each outcome, using tbl_strata to safely partition the data rows
+# 2. Map over each outcome
 table_list <- map(outcomes, function(var) {
   
-  # Set up a direct named list for the specific label column
   lbl_list <- list(var)
   names(lbl_list) <- var
   
-  data_prep |>
+  # A. Create Stratified Columns
+  t_strata <- data_prep |>
     dplyr::select(rand_gp, strata_gp, all_of(var)) |>
     tbl_strata(
       strata = strata_gp,
-      .combine_with = "tbl_stack",
+      .combine_with = "tbl_merge",
       .tbl_fun = ~ .x |> 
         tbl_summary(
           by = rand_gp, 
           statistic = all_categorical() ~ "{n} / {N} ({p}%)", 
-          digits = all_continuous() ~ 0, 
           label = lbl_list,                      
           missing_text = "(Missing)"
-        ) |> 
-        add_n(),
-      .header = "{strata}" # This prints the strata label right in the row divider line
+        )
+    )
+  
+  # B. Create Combined Columns
+  t_combined <- data_prep |>
+    dplyr::select(rand_gp, all_of(var)) |>
+    tbl_summary(
+      by = rand_gp, 
+      statistic = all_categorical() ~ "{n} / {N} ({p}%)", 
+      label = lbl_list,                      
+      missing_text = "(Missing)"
+    )
+  
+  # C. Merge side-by-side using exact column matching
+  tbl_merge(
+    tbls = list(t_strata, t_combined)
+  ) |> 
+    # Directly overwrite headers dynamically without breaking internal naming rules
+    modify_spanning_header(
+      starts_with("stat_1_1") ~ "**<28 weeks**",
+      starts_with("stat_2_1") ~ "**<28 weeks**",
+      starts_with("stat_1_2_") ~ "**28 to <32 weeks**",
+      starts_with("stat_2_2_") ~ "**28 to <32 weeks**",
+      c(stat_1_2, stat_2_2)   ~ "**Combined Strata**"
     )
 })
 
-# 3. Stack the primary outcome blocks together
-# Because tbl_strata already handles stratum headers, we map the macro headers here
-ae1.strata.elig <- tbl_stack(
-  table_list, 
-  group_header = outcomes
-) |>
-  modify_caption("**Table 8.** Summary of neonatal morbidities by intervention group and strata among the randomised participants.")
-ae1.strata.elig
-##add a footnote about those present before randomisation
+# 3. Stack the outcome tables together vertically
+master_table <- tbl_stack(
+  tbls = table_list,
+  group_header = c("Intraventricular Hemorrhage (IVH)", 
+                   "Periventricular Leukomalacia (PVL)", 
+                   "Bronchopulmonary Dysplasia (BPD)")
+)
 
-
-## Frequency (%) for each category of severity for intervention and control groups by randomisation status and prematurity strata and whether it was present prior to
-#randomisation - table
+# 4. Print the final table
+master_table
 ```
 
 \newpage
+
+
+```{r Estimand_S9_S16_S17_sibs, echo=FALSE, message = FALSE, warning = FALSE}
+## grade III/IV intraventricular haemorrhage (IVH) and PVL at ≤36.0 w PMA (PVL as well)
+## severity of BDP at 36 wk - Estimand S9
+
+
+data_elig_AE_sibs <- data_sib %>%
+  mutate(rand_gp = factor(nonrand_gp, levels = c ("0","1"), labels = c("Control", "Intervention")),
+         PVL = factor(PVL, c("0","1")),
+         BPD = factor(data_elig$BPD, levels = c("0","1","2","3")),
+         IVH = factor(data_elig$IVH, levels = c("0","1","2","3","4")))
+
+
+data_prep <- data_elig_AE_rand |> 
+  dplyr::select(ga_strata, rand_gp, IVH, PVL, BPD) |> 
+  filter(ga_strata %in% c(1, 2)) |> 
+  mutate(
+    strata_gp = case_when(
+      ga_strata == 1 ~ "<28 weeks", 
+      ga_strata == 2 ~ "28 to <32 weeks"
+    ),
+    strata_gp = factor(strata_gp, levels = c("<28 weeks", "28 to <32 weeks"))
+  )
+
+outcomes <- c("IVH", "PVL", "BPD")
+
+# 2. Map over each outcome
+table_list <- map(outcomes, function(var) {
+  
+  lbl_list <- list(var)
+  names(lbl_list) <- var
+  
+  # A. Create Stratified Columns
+  t_strata <- data_prep |>
+    dplyr::select(rand_gp, strata_gp, all_of(var)) |>
+    tbl_strata(
+      strata = strata_gp,
+      .combine_with = "tbl_merge",
+      .tbl_fun = ~ .x |> 
+        tbl_summary(
+          by = rand_gp, 
+          statistic = all_categorical() ~ "{n} / {N} ({p}%)", 
+          label = lbl_list,                      
+          missing_text = "(Missing)"
+        )
+    )
+  
+  # B. Create Combined Columns
+  t_combined <- data_prep |>
+    dplyr::select(rand_gp, all_of(var)) |>
+    tbl_summary(
+      by = rand_gp, 
+      statistic = all_categorical() ~ "{n} / {N} ({p}%)", 
+      label = lbl_list,                      
+      missing_text = "(Missing)"
+    )
+  
+  # C. Merge side-by-side using exact column matching
+  tbl_merge(
+    tbls = list(t_strata, t_combined)
+  ) |> 
+    # Directly overwrite headers dynamically without breaking internal naming rules
+    modify_spanning_header(
+      starts_with("stat_1_1") ~ "**<28 weeks**",
+      starts_with("stat_2_1") ~ "**<28 weeks**",
+      starts_with("stat_1_2_") ~ "**28 to <32 weeks**",
+      starts_with("stat_2_2_") ~ "**28 to <32 weeks**",
+      c(stat_1_2, stat_2_2)   ~ "**Combined Strata**"
+    )
+})
+
+# 3. Stack the outcome tables together vertically
+master_table <- tbl_stack(
+  tbls = table_list,
+  group_header = c("Intraventricular Hemorrhage (IVH)", 
+                   "Periventricular Leukomalacia (PVL)", 
+                   "Bronchopulmonary Dysplasia (BPD)")
+)
+
+# 4. Print the final table
+master_table
+```
+
+\newpage
+
+#change this table to footnotes
 
 ```{r Estimand_S16_S17_prerand, echo=FALSE, message = FALSE, warning = FALSE}
 
@@ -325,7 +455,6 @@ data_prerand <- data_elig %>%
 
 # 1. Prepare data with safe factor levels
 data_prep <- data_prerand |> 
-  #filter(wk36_present == 1) |> 
   dplyr::select(ga_strata, rand_gp, IVH_prior, PVL_prior) |> 
   mutate(
     strata_gp = case_when(
@@ -446,35 +575,35 @@ ae1.strata.sib
 
 \newpage
 
-```{r Estimand_S19_rand, echo=FALSE, message = FALSE, warning = FALSE}
-##  risk for cerebral palsy (CP) on General Movements Assessment (GMA) at 36.0 w PMA.
-#Randomised trial eligble participamts
+<!-- ```{r Estimand_S19_rand, echo=FALSE, message = FALSE, warning = FALSE} -->
+<!-- ##  risk for cerebral palsy (CP) on General Movements Assessment (GMA) at 36.0 w PMA. -->
+<!-- #Randomised trial eligble participamts -->
 
-cp.risk.rand <- data_19_elig |>
-dplyr::select(ga_strata, rand_gp, GMA.f) |>
-mutate(strata = case_when(ga_strata == "1" ~ "<28 weeks",
-ga_strata == "2" ~ "28 to <32 weeks",
-.default = "Unknown strata")) %>%
-mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))|>
-tbl_strata(
-strata = strata,
-.tbl_fun =
-~ .x |>
-tbl_summary(by = rand_gp,
-statistic = list(
-all_categorical() ~ "{n} / {N} ({p}%)"
-),
-label = list(GMA.f = "Assessment of risk of cerebral palsy"),
-missing_text = "(Missing)") |>
-add_n(),
-# This automatically sets the spanning header above Control & Intervention to the dynamic Strata name
-.header = "**{strata}**, N = {n}"
-) |>
-modify_caption("**Table 10.** Risk of cerebral palsy on General Movements Assessment (GMA) at 36.0wk PMA by intervention and strata.")
+<!-- cp.risk.rand <- data_19_elig |> -->
+<!-- dplyr::select(ga_strata, rand_gp, GMA.f) |> -->
+<!-- mutate(strata = case_when(ga_strata == "1" ~ "<28 weeks", -->
+<!-- ga_strata == "2" ~ "28 to <32 weeks", -->
+<!-- .default = "Unknown strata")) %>% -->
+<!-- mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))|> -->
+<!-- tbl_strata( -->
+<!-- strata = strata, -->
+<!-- .tbl_fun = -->
+<!-- ~ .x |> -->
+<!-- tbl_summary(by = rand_gp, -->
+<!-- statistic = list( -->
+<!-- all_categorical() ~ "{n} / {N} ({p}%)" -->
+<!-- ), -->
+<!-- label = list(GMA.f = "Assessment of risk of cerebral palsy"), -->
+<!-- missing_text = "(Missing)") |> -->
+<!-- add_n(), -->
+<!-- # This automatically sets the spanning header above Control & Intervention to the dynamic Strata name -->
+<!-- .header = "**{strata}**, N = {n}" -->
+<!-- ) |> -->
+<!-- modify_caption("**Table 10.** Risk of cerebral palsy on General Movements Assessment (GMA) at 36.0wk PMA by intervention and strata.") -->
 
-cp.risk.rand
+<!-- cp.risk.rand -->
 
-```
+<!-- ``` -->
 
 
 \newpage
