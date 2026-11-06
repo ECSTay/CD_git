@@ -154,8 +154,11 @@ data_10_sib <- data_sib %>%
 
 ```
 
-#Right shift of the SpO2/PiO2 curve at 36.0 w PMA
-## Randomised
+#Estimand S10
+
+The Right shift (kPa) is calculated using FiO2 and SpO2. If FiO2 is equal to 21.0% and SpO2 is missing, we have used the average across all other records with FiO2 equal to 21.0% and SpO2 greater than 97.0%.
+
+Table 1: Summary of shift of the SpO2/PiO2 curve (kPa) at 36.0 weeks PMA (window 34.0 to < 38.0 weeks PMA) stratified by gestational age and treatment group for eligible and randomised participants (N = 743)
 
 ```{r Estimand_S10_rand, echo=FALSE, message = FALSE, warning = FALSE}
 ## the right shift of the SpO2/PiO2 curve at 36.0 w PMA.****
@@ -204,7 +207,12 @@ final_table_shift <- tbl_merge(
   modify_spanning_header(
     c(stat_1_1_1, stat_2_1_1) ~ "**<28 weeks**",
     c(stat_1_2_1, stat_2_2_1) ~ "**28 to <32 weeks**",
-    c(stat_1_2, stat_2_2)     ~ "**Combined Strata**"
+    c(stat_1_2, stat_2_2)     ~ "**Overall**"
+  ) |>
+
+gtsummary::as_gt() |> 
+  gt::tab_header(
+    title = "Table 1: Right Shift (kPa) Stratified by Gestational Age"
   )
 
 # Preview the final table
@@ -213,7 +221,7 @@ final_table_shift
 ## Unadjusted median (with 25th and 75th percentiles) for intervention and control groups by randomisation status and prematurity strata - table
 ```
 
-##Siblings
+Table 2: Summary of shift of the SpO2/PiO2 curve (kPa) at 36.0 weeks PMA (window 34.0 to < 38.0 weeks PMA) stratified by gestational age and treatment group for siblings of the participants (N = 125)
 
 ```{r Estimand_S10_nonrand, echo=FALSE, message = FALSE, warning = FALSE}
 ## the right shift of the SpO2/PiO2 curve at 36.0 w PMA.****
@@ -263,7 +271,7 @@ final_table_shift_sib <- tbl_merge(
   modify_spanning_header(
     c(stat_1_1_1, stat_2_1_1) ~ "**<28 weeks**",
     c(stat_1_2_1, stat_2_2_1) ~ "**28 to <32 weeks**",
-    c(stat_1_2, stat_2_2)     ~ "**Combined Strata**"
+    c(stat_1_2, stat_2_2)     ~ "**Overall**"
   )
 
 # Preview the final table
@@ -273,7 +281,9 @@ final_table_shift_sib
 
 
 \newpage
-#SAFETY OUTCOMES
+#Estimands S9, S16, and S17
+
+Table 3. Summary of neonatal morbidities present up to and including 36.0 weeks PMA by intervention group and prematurity strata among the randomised and eligible participants (N = 743).
 
 ```{r Estimand_S9_S16_S17_rand, echo=FALSE, message = FALSE, warning = FALSE}
 ## grade III/IV intraventricular haemorrhage (IVH) and PVL at ≤36.0 w PMA (PVL as well)
@@ -341,7 +351,7 @@ table_list <- map(outcomes, function(var) {
       starts_with("stat_2_1") ~ "**<28 weeks**",
       starts_with("stat_1_2_") ~ "**28 to <32 weeks**",
       starts_with("stat_2_2_") ~ "**28 to <32 weeks**",
-      c(stat_1_2, stat_2_2)   ~ "**Combined Strata**"
+      c(stat_1_2, stat_2_2)   ~ "**Overall**"
     )
 })
 
@@ -359,8 +369,9 @@ master_table
 
 \newpage
 
+Table 4. Summary of neonatal morbidities present up to and including 36.0 weeks PMA by intervention group and prematurity strata among siblings of the participants (N = 125).
 
-```{r Estimand_S9_S16_S17_sibs, echo=FALSE, message = FALSE, warning = FALSE}
+```{r Estimand_S9_S16_S17_sibs, tab.cap="This is my table caption at the top", echo=FALSE, message = FALSE, warning = FALSE}
 ## grade III/IV intraventricular haemorrhage (IVH) and PVL at ≤36.0 w PMA (PVL as well)
 ## severity of BDP at 36 wk - Estimand S9
 
@@ -426,7 +437,7 @@ table_list <- map(outcomes, function(var) {
       starts_with("stat_2_1") ~ "**<28 weeks**",
       starts_with("stat_1_2_") ~ "**28 to <32 weeks**",
       starts_with("stat_2_2_") ~ "**28 to <32 weeks**",
-      c(stat_1_2, stat_2_2)   ~ "**Combined Strata**"
+      c(stat_1_2, stat_2_2)   ~ "**Overall**"
     )
 })
 
@@ -552,6 +563,8 @@ ae1.strata.elig.prior
 
 #ESTIMAND 20 - study related adverse events
 
+Table XX: Summary of study related adverse events in eligible and randomised participants by intervention group and strata. (N = 743)
+
 ```{r Estimand_S20, echo=FALSE, message = FALSE, warning = FALSE, results = 'asis'}
 ##  study related adverse events prior to initial discharge home.
 ##Study related adverse event of (i) retinopathy of prematurity with a Stage III or
@@ -561,53 +574,82 @@ ae1.strata.elig.prior
 #any perceived safety issue associated with the intervention devices, up to date of death, discharge
 #home from hospital, or 44.0 w PMA, whichever occurs first for each participant
 
-#Randomised trial eligible participants up to date of death, discharge home from hospital, or 44.0 w PMA, whichever occurs first ie ALL of them in data_elig (N = 743)
-
 ##  Frequencies (%) for intervention and control groups by strata
-
 data_elig_20 <- data_elig %>%
-  mutate(ROP_2plus = factor(ROP_2plus, levels = c(0,1)),
-         ae_yn.factor = factor(ae_yn, levels = c("0","1")),
-         skin_damage = case_when(is.na(ae_yn.factor) ~ "0", TRUE ~ ae_yn.factor))
-         
+  mutate(
+    # Ensure rand_gp is a factor with explicit Control and Intervention labels
+    rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
+    
+    # Keep 0 and 1 as factor levels so gtsummary recognizes them as dichotomous
+    ROP_2plus = factor(ROP_2plus, levels = c(0, 1)),
+    ae_yn.factor = factor(ae_yn, levels = c("0", "1")),
+    skin_damage = case_when(is.na(ae_yn.factor) ~ "0", TRUE ~ ae_yn.factor),
+    skin_damage = factor(skin_damage, levels = c("0", "1"))
+  )
 
+ae.data <- data_elig_20 %>%
+  dplyr::select(ga_strata, rand_gp, ROP_2plus, skin_damage) %>%
+  mutate(
+    strata1 = case_when(
+      ga_strata == "1" ~ "<28 weeks",
+      ga_strata == "2" ~ "28 to <32 weeks",
+      .default = "Unknown strata"
+    ),
+    strata1 = factor(strata1, levels = c("<28 weeks", "28 to <32 weeks"))
+  ) %>%
+  dplyr::select(-ga_strata) %>%
+  filter(!is.na(strata1) & !is.na(rand_gp))
 
+# 2. Define baseline summary settings 
+my_tbl_fun <- function(x) {
+  x %>%
+    tbl_summary(
+      by = rand_gp,
+      statistic = list(
+        all_continuous() ~ "{median} ({p25},{p75})",
+        all_categorical() ~ "{n} / {N} ({p}%)"
+      ),
+      digits = all_continuous() ~ 0,
+      missing = "ifany",
+      label = list(
+        ROP_2plus = "ROP - Stage III or greater or Stage II plus disease",
+        skin_damage = "Skin damage from wearables"
+      )
+    )
+}
 
-ae.strata <- data_elig_20 |>
-  dplyr::select(ga_strata, rand_gp, ROP_2plus, skin_damage) |>
-  mutate(strata1 = case_when(ga_strata == "1" ~ "<28 weeks",
-                            ga_strata == "2" ~ "28 to <32 weeks",
-                            .default = "Unknown strata")) %>%
-  mutate(strata1 = factor(strata1, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))|>
-  dplyr::select(-ga_strata) |>
-  tbl_strata(
-    strata = strata1,
-    .tbl_fun =
-      ~ .x |>
-      tbl_summary(by = rand_gp,
-                  statistic = list(
-                    all_continuous() ~ "{median} ({p25},{p75})",
-                    all_categorical() ~ "{n} / {N} ({p}%)"
-                  ),
-                  digits = all_continuous() ~ 0,
-                  missing = "ifany",
-                  label = list(ROP_2plus = "ROP - Stage III or greater or Stage II plus disease",
-                               skin_damage = "Skin damage from wearables")
-                  ) |>
-      add_n(),
-    .header = "**{strata}**, N = {n}"
-  ) |>
+# 3. Generate individual sub-tables
+ae.overall   <- my_tbl_fun(ae.data)
+ae.strata_28 <- my_tbl_fun(ae.data %>% filter(strata1 == "<28 weeks"))
+ae.strata_32 <- my_tbl_fun(ae.data %>% filter(strata1 == "28 to <32 weeks"))
+
+# 4. Merge side-by-side
+ae.strata <- tbl_merge(
+  tbls = list(ae.overall, ae.strata_28, ae.strata_32),
+  tab_spanner = c(
+    "**Overall**", 
+    "**<28 weeks**", 
+    "**28 to <32 weeks**"
+  )
+) %>%
+  modify_header(
+    stat_1_1 ~ "**{level}**<br>N = {n}",
+    stat_2_1 ~ "**{level}**<br>N = {n}",
+    stat_1_2 ~ "**{level}**<br>N = {n}",
+    stat_2_2 ~ "**{level}**<br>N = {n}",
+    stat_1_3 ~ "**{level}**<br>N = {n}",
+    stat_2_3 ~ "**{level}**<br>N = {n}"
+  ) %>%
   modify_caption("**Table 10.** Summary of study related adverse events by intervention group and strata.")
 
-
+# Display the table
 ae.strata
-
 ```
 
 \newpage
 #ESTIMAND 21 - Serious study-related adverse events
 
-
+Table XX: Summary of study related adverse events in eligible and randomised participants by intervention group and strata. (N = 743)
 ```{r Estimand_S21, echo=FALSE, message = FALSE, warning = FALSE,results = 'asis'}
 ##  study related serious adverse events prior to initial discharge home.
 ##Study related adverse event of (i) retinopathy of prematurity with a Stage III or
