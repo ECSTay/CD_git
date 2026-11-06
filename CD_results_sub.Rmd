@@ -98,10 +98,7 @@ data <- data_raw %>%
          IVH = case_when(IVH == 5 ~ 4, .default = IVH),
          IVH = case_when(study_id == "CD-02019" ~ 4, .default = IVH),
          IVH.factor = as.factor(IVH),
-         rop = case_when(rop == "5" ~ "0", rop == "NI" ~ "0", .default = rop),
-         rop_plus_yn1 = case_when(rop == "0" ~ "0", rop == "5" ~ "0",  rop == "NI" ~ "0",
-                                  rop_plus_yn == "NI" ~ "0", rop_plus_yn == "UNK" ~ "0", .default = rop_plus_yn),
-         roprx1 = case_when(rop == "0" ~ "0", rop == "5" ~ "0", .default = roprx),
+        
          BPD_any = case_when(BPD == 0 ~ 0, 
                              BPD > 0 ~ 1, 
                              is.na(BPD) & death_36wpma == 1 ~ 0,
@@ -112,29 +109,36 @@ data <- data_raw %>%
                            IVH %in% c("3","4") ~ 1,
                            .default = IVH),
          nec_2 = case_when(necstage %in% c("2","3") ~ "1",
-                           necstage == "1" ~ "0", necstage == "" ~ "0", 
-                           necstage == "NI" ~ "0", is.na(necstage) ~ "0",
+                           necstage == "1" ~ "0",
+                           necstage == "" ~ "0", #absence of examination implies absence of condition
+                           necstage == "NI" ~ "0", #absence of examination implies absence of condition
                            is.na(necstage) & death_44wpma == 1 ~ "0",
                            is.na(necstage) & withdraw_44wpma == 1 ~ NA,
-                           is.na(necstage) & withdraw_dcg == 1 ~ NA,
-                          .default = "0"),
+                           is.na(necstage) & necdx == "0" ~ "0",
+                           is.na(necdx) & is.na(necstage) ~ NA,
+                          .default = NA),
          nec_2 = as.numeric(nec_2),
-         ROP_2plus = case_when(rop %in% c("3","4","5") ~ 1,
+         ROP_2plus = case_when(rop %in% c("3","4") ~ 1,
                                rop == "2" & rop_plus_yn == 1 ~ 1,
+                               rop %in% c("0", "1","2", "5", "NI", "UNK", "") ~ 0, 
                                is.na(rop) & death_44wpma == 1 ~ 0,
-                               is.na(rop) & withdraw_dcg == 1 ~ NA, #withdrew before discharge
-                              .default = 0),
+                               is.na(rop) & withdraw_44wpma == 1 ~ NA, 
+                              .default = NA),
          ROP_2plus = as.numeric(ROP_2plus), 
+         ROP_2plus_notime = case_when(rop %in% c("3","4") ~ 1,
+                               rop == "2" & rop_plus_yn == 1 ~ 1,
+                               rop %in% c("0", "1","2", "5", "NI", "UNK", "") ~ 0, 
+                               is.na(rop) & dth_yn == 1 ~ 0,
+                               is.na(rop) & withdraw_yn == 1 ~ 0, 
+                              .default = NA),
+         ROP_2plus_notime = as.numeric(ROP_2plus_notime), 
          sepsis_count = case_when(death_44wpma == 1 & !is.na(sepsis_proven_no) ~ sepsis_proven_no,
                                   death_44wpma == 1 & is.na(sepsis_proven_no) ~ 0,
-                                  withdraw_44wpma == 1 ~ NA, 
-                                  sepsis_proven_yn == 0 ~ 0,
-                                  sepsis_proven_yn == "NI" ~ 0,
-                                  sepsis_proven_yn == "" ~ 0,
-                                  is.na(sepsis_proven_yn) ~ 0,
+                                  is.na(death_44wpma) ~ NA, 
+                                  sepsis_proven_yn %in% c(0, "NI", "", NA) ~ 0,
                                   .default = sepsis_proven_no),
          chorio = case_when(chor_clin_yn == 1 ~ 1, chor_hist == 1 ~ 2, .default = 0),
-          rand.dfor      = as.Date(parse_date_time(rand_dtm, orders = possible_formats)),
+        rand.dfor      = as.Date(parse_date_time(rand_dtm, orders = possible_formats)),
          dob.dfor       = as.Date(parse_date_time(b_dtm, orders = possible_formats)),
          wd.dfor        = as.Date(parse_date_time(withdraw_dt, orders = possible_formats)),
          dischhome.dfor = as.Date(parse_date_time(dischhome_dtm, orders = possible_formats)),
@@ -932,7 +936,7 @@ Eligible and randomised participants know to survive to 44.0 weeks PMA. Particip
 ```{r  nec_2 table, echo=FALSE, message = FALSE, warning = FALSE}
 
 data_prep <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | nec_2 == 1) %>% 
+  filter(wk44_present == 1 | death_44wpma == 1 | nec_2 == 1) %>% #554
   mutate(
     rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
     nec_2.f = factor(nec_2, levels = c("0", "1"), labels = c("No", "Yes"))
@@ -1159,7 +1163,7 @@ There was insufficient evidence to conclude a difference in risk of ROP Stage II
 ###
 
 data_prepared <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | sepsis_proven_yn == 1) %>% 
+  filter(wk44_present == 1 | death_44wpma == 1) %>% #550
   mutate(
     rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
     sepsis_count.f = as.factor(sepsis_count)
@@ -1228,7 +1232,7 @@ data_S18_tab
 #Fit Poisson regression model - rate ratio
 
 data_S18 <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1) %>% #691 #569
+  filter(wk44_present == 1 | death_44wpma == 1) %>% #550
   dplyr::select(study_id,sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>% 
   tidyr::drop_na(sepsis_count, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   #dplyr::select(where(~ any(is.na(.))))# 
