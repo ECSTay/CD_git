@@ -176,25 +176,79 @@ add_rcs_splines <- function(data, x_var, probs = c(0.1, 0.4, 0.6, 0.9)) {
 
 # S1: Survival at 36.0 w PMA (logistic regression model)
 
+Eligible and randomised participants who are known to survive to 36.0 weeks PMA.
 
 ```{r  data_S1 table, echo=FALSE, message = FALSE, warning = FALSE}
-data_S1_tab <- data_elig %>%
-  filter(wk36_present == 1 | death_36wpma == 1) %>% #691 -> 53 withdrawals which ties in with the CONSORT
-  mutate(death_36wpma = as.factor(death_36wpma),
-         rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention"))
-         ) %>%
-   tbl_strata(
+# data_S1_tab <- data_elig %>%
+#   filter(wk36_present == 1 | death_36wpma == 1) %>% #689 -> 52 withdrawals and 2 LTFU which ties in with the CONSORT
+#   mutate(death_36wpma = as.factor(death_36wpma),
+#          rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention"))
+#          ) %>%
+#    tbl_strata(
+#     strata = ga_strata,
+#     .tbl_fun = \(x) tbl_summary(
+#       x,
+#       include = death_36wpma,
+#       by = rand_gp,
+#       percent = "column",
+#       # {n} = numerator, {N} = denominator, {p} = percentage
+#       statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
+#       label = list(death_36wpma ~ "Death by 36wPMA")
+#     ) 
+#   )
+# 
+# data_S1_tab
+
+#0. Prepare the base data frame to avoid code repetition
+# 1. Prepare data and explicitly map the strata labels
+data_prepared <- data_elig %>%
+  filter(wk36_present == 1 | death_36wpma == 1) %>% #689
+  mutate(
+    death_36wpma = as.factor(death_36wpma),
+    rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
+    
+    # Replace existing strata values with your exact required labels.
+    # (Adjust the left side of the assignments below if your original raw data values differ)
+    ga_strata = case_when(
+      ga_strata == 1 ~ "<28 weeks",
+      ga_strata == 2 ~ "28-<32 weeks",
+      TRUE ~ as.character(ga_strata)
+    ),
+    # Enforce factor levels to keep them in chronological order in the table columns
+    ga_strata = factor(ga_strata, levels = c("<28 weeks", "28-<32 weeks"))
+  )
+
+# 2. Create the stratified table (<28 weeks and 28-<32 weeks)
+tab_strata <- data_prepared %>%
+  tbl_strata(
     strata = ga_strata,
     .tbl_fun = \(x) tbl_summary(
       x,
       include = death_36wpma,
       by = rand_gp,
       percent = "column",
-      # {n} = numerator, {N} = denominator, {p} = percentage
       statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
-      label = list(death_36wpma ~ "Death by 36wPMA")
+      label = list(death_36wpma ~ "Death by 36 weeks PMA")
     ) 
   )
+
+# 3. Create the overall table
+tab_overall <- data_prepared %>%
+  tbl_summary(
+    include = death_36wpma,
+    by = rand_gp,
+    percent = "column",
+    statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
+    label = list(death_36wpma ~ "Death by 36 weeks PMA")
+  ) %>%
+  modify_spanning_header(all_stat_cols() ~ "**Overall**")
+
+# 4. Merge them together side-by-side
+data_S1_tab <- tbl_merge(
+  tbls = list(tab_strata, tab_overall),
+  tab_spanner = FALSE 
+) %>%
+  modify_caption("** Table 1: Neonatal mortality at 36 weeks PMA by Prematurity Strata and Treatment Group")
 
 data_S1_tab
 
@@ -203,11 +257,11 @@ data_S1_tab
 ```{r Estimand_S1, echo=FALSE, message = FALSE, warning = FALSE}
 
 # survival to 36.0 w PMA
-#Sens analysis 1) replace all missing wiht alive 2) replace all missing with death
+#Sens analysis 1) replace all missing wiht alive 2) replace all missing with death # not performed as none missing
 
 
 data_S1 <- data_elig %>%
-  filter(wk36_present == 1 | death_36wpma == 1) %>%  (#1.2: 689)
+  filter(wk36_present == 1 | death_36wpma == 1) %>%  #689
   dplyr::select(death_36wpma,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(death_36wpma,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -258,10 +312,13 @@ There was insufficient evidence to conclude a significant difference in the risk
 
 #Table for Estimands S2, S3, S4 and S5
 
+Eligible and randomised participants, excluding participants with missing anthropometric measurements due to death prior to 36.0 weeks PMA. Outcomes for participants with missing data due to withdrawal or loss to follow-up or discharge to secondary hospital imputed using multiple imputation informed by participant's prematurity and multiple birth status in the analyses.
+
+
 ```{r  growth table, echo=FALSE, message = FALSE, warning = FALSE}
 
 growth_table <- data_elig %>%
-  filter(death_36wpma == 0) %>%
+  filter(death_36wpma == 0) %>% #680
    dplyr::select(ga_strata,rand_gp,wpma36_weight_Z,wpma36_length_Z,wpma36_HC_Z, wpma36_weight_zdiff) %>%
    tbl_strata(
     strata = ga_strata,
@@ -283,6 +340,63 @@ growth_table <- data_elig %>%
 # 3. Print the table
 growth_table
 
+growth_prepared <- data_elig %>%
+  filter(death_36wpma == 0) %>% 
+  mutate(
+    rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
+    
+    # Map numeric values (1 and 2) to your required strings
+    ga_strata = case_when(
+      ga_strata == 1 ~ "<28 weeks",
+      ga_strata == 2 ~ "28-32 weeks",
+      TRUE ~ as.character(ga_strata)
+    ),
+    ga_strata = factor(ga_strata, levels = c("<28 weeks", "28-32 weeks"))
+  ) %>%
+  dplyr::select(ga_strata, rand_gp, wpma36_weight_Z, wpma36_length_Z, wpma36_HC_Z, wpma36_weight_zdiff)
+
+# 2. Create the stratified growth table (<28 weeks and 28-32 weeks)
+tab_growth_strata <- growth_prepared %>%
+  tbl_strata(
+    strata = ga_strata,
+    .tbl_fun = \(x) tbl_summary(
+      x,
+      include = c(wpma36_weight_Z, wpma36_length_Z, wpma36_HC_Z, wpma36_weight_zdiff),
+      by = rand_gp,
+      statistic = list(all_continuous() ~ "{mean} ({sd})"), 
+      label = list(
+        wpma36_weight_Z ~ "Weight Z-score",
+        wpma36_length_Z   ~ "Length Z-score",
+        wpma36_HC_Z    ~ "HC Z-score",
+        wpma36_weight_zdiff ~ "Weight Z-score Diff"
+      )
+    ) 
+  )
+
+# 3. Create the overall growth table
+tab_growth_overall <- growth_prepared %>%
+  tbl_summary(
+    include = c(wpma36_weight_Z, wpma36_length_Z, wpma36_HC_Z, wpma36_weight_zdiff),
+    by = rand_gp,
+    statistic = list(all_continuous() ~ "{mean} ({sd})"), 
+    label = list(
+      wpma36_weight_Z ~ "Weight Z-score",
+      wpma36_length_Z   ~ "Length Z-score",
+      wpma36_HC_Z    ~ "HC Z-score",
+      wpma36_weight_zdiff ~ "Weight Z-score Diff"
+    )
+  ) %>%
+  modify_spanning_header(all_stat_cols() ~ "**Overall**")
+
+# 4. Merge side-by-side and add the Table Title
+growth_table <- tbl_merge(
+  tbls = list(tab_growth_strata, tab_growth_overall),
+  tab_spanner = FALSE 
+) %>%
+  modify_caption("**Table 2: Anthropometric Z-scores at 36wPMA by Prematurity Strata and Treatment Group**")
+
+# 5. Print the table
+growth_table
 ```
 
 
@@ -344,11 +458,11 @@ pooled_marginal_effects <- as.data.frame(avg_comparisons(all_models, vcov = "HC3
 
 
 results_2 <- data.frame(
-  estimate = round(regression_table$Estimate[2], digits = 2),
+  estimate = round(regression_table$Estimate[2], digits = 4),
   Lower_95_CI = round(regression_table$lower_bound[2], digits = 2),
   Upper_95_CI = round(regression_table$upper_bound[2], digits = 2),
   raw_p_value = round(regression_table$p_value[2], digits = 3),
-  marg_estimate <- round(pooled_marginal_effects$estimate[9], digits = 2),
+  marg_estimate <- round(pooled_marginal_effects$estimate[9], digits = 4),
   marg_Lower_95_CI = round(pooled_marginal_effects$conf.low[9], digits = 2),
   marg_Upper_95_CI = round(pooled_marginal_effects$conf.high[9], digits = 2),
   p_value = round(pooled_marginal_effects$p.value[9], digits = 3)
@@ -356,13 +470,13 @@ results_2 <- data.frame(
 
 
 results_2 <- results_2 %>%
-rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
+rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...4.)
 print(results_2)
 
 ```
 <!-- The data for this estimand includes all randomised participants known to survive until 36.0 weeks PMA (n = 735). 48 were missing their standardised weight Z-scores at 36.0 weeks PMA. 40 had withdrawn before 36w PMA. 7 had been discharged  to secondary hospital before 36 weeks PMA. 1 had their growth variables collected outside the 34-38 week window The weight Z-scores of these 48 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate. -->
 
-There was insufficient evidence to conclude a significant difference in the means of standardised weight Z-scores at 36.0 weeks PMA between the control and intervention groups (marginal adjusted difference in means: 0.01, 95% CI: -0.10 to 0.12, B-H adjusted p-value = 0.995).
+There was insufficient evidence to detect a significant difference in the means of standardised weight Z-scores at 36.0 weeks PMA between the control and intervention groups (marginal adjusted difference in means: -0.0004, 95% CI: -0.11 to 0.11, B-H adjusted p-value = 0.995).
 
 
 # S3: Standardised length at 36.0 w PMA (window 34.0 to <38.0 w PMA, general linear regression model)
@@ -431,12 +545,15 @@ results_3 <- results_3 %>%
 rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
 print(results_3)
 
+# > sd(as.numeric(!is.na(data_elig$crown_heel)))
+# [1] 0.3118711
+
 ```
 <!-- The data for this estimand includes randomised participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised length Z-scores at 36.0 weeks PMA: 9 was withdrawn by 36 weeks PMA, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 27 did not have their length recorded at 36.0 week PMA, leaving 645 participants available for analysis. The length Z-scores of these 35 participants were imputed informed by prematurity strata and multiple birth status. -->
 
-After adjustment for relevant covariates, the intervention group had a statistically significant mean difference of 0.20 in length Z-scores (SD from our cohort translate to cm) compared to the control group, translating to mean difference of approximately 0.61cm* longer than the control group within the cohort (marginal adjusted difference in means: 0.20, 95% CI: 0.05 to 0.35; B-H adjusted p-value = 0.007).
+After adjustment for relevant covariates, the intervention group had a statistically significant mean difference of 0.20 in length Z-scores (SD from our cohort translate to cm) compared to the control group, translating to mean difference of approximately 0.062cm* longer than the control group within the cohort (marginal adjusted difference in means: 0.20, 95% CI: 0.05 to 0.35; B-H adjusted p-value = 0.007).
 
-*0.20 x 3.05 (SD of the crown-heel length at 36.0wk PMA of the cohort)
+*0.20 x 0.31 (SD of the crown-heel length at 36.0wk PMA of the cohort)
 
 # S4: Standardised head circumference at 36.0 w PMA (window 34.0 to <38.0 w PMA, general linear regression model)
 ```{r Estimand_S4, echo=FALSE, message = FALSE, warning = FALSE}
@@ -508,7 +625,7 @@ print(results_4)
 ```
 <!-- The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (n = 680). Of these participants, 35 were missing their standardised head circumference Z-scores at 36.0 weeks PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, 6 were discharged to secondary hospitals before 36.0 weeks PMA, and 17 did not have their head circumference measured at 36.0 weeks PMA, leaving 655 participants available for analysis. The head circumference Z-scores of these 25 participants were imputed using the Amelia package in R informed by prematurity strata and multiple birth status.1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate. -->
 
-There was insufficient evidence to detect a difference in mean standardised head circumference Z scores between the intervention and control groups (adjusted mean difference -0.09, 95% CI: -0.24 to 0.06, B-H adjusted p-value = 0.225).
+There was insufficient evidence to detect a difference in mean standardised head circumference Z scores between the intervention and control groups (adjusted mean difference -0.09, 95% CI: -0.25 to 0.06, B-H adjusted p-value = 0.231).
 
 \newpage
 
@@ -564,11 +681,11 @@ pooled_marginal_effects <- as.data.frame(avg_comparisons(all_models, vcov = "HC3
 
 
 results_5 <- data.frame(
-  estimate = round(regression_table$Estimate[2], digits = 2),
+  estimate = round(regression_table$Estimate[2], digits = 4),
   Lower_95_CI = round(regression_table$lower_bound[2], digits = 2),
   Upper_95_CI = round(regression_table$upper_bound[2], digits = 2),
   raw_p_value = round(regression_table$p_value[2], digits = 3),
-  marg_estimate <- round(pooled_marginal_effects$estimate[9], digits = 2),
+  marg_estimate <- round(pooled_marginal_effects$estimate[9], digits = 4),
   marg_Lower_95_CI = round(pooled_marginal_effects$conf.low[9], digits = 2),
   marg_Upper_95_CI = round(pooled_marginal_effects$conf.high[9], digits = 2),
   p_value = round(pooled_marginal_effects$p.value[9], digits = 3)
@@ -576,22 +693,38 @@ results_5 <- data.frame(
 
 
 results_5 <- results_5 %>%
-rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...2.)
+rename(marg_estimate = marg_estimate....round.pooled_marginal_effects.estimate.9...digits...4.)
 print(results_5)
 
 ```
 <!-- The data for this estimand included the randomised and eligible participants known to survive until 36.0 weeks PMA (N = 680). 8 were missing their weight Z-scores at 36.0 wk PMA: 1 was withdrawn, 1 had their growth variables collected outside the 34-38 week window, and 6 were discharged to secondary hospitals before 36.0wk PMA, leaving 672 participants available for analysis. Their growth velocity outcomes (difference in weight Z-score between birth and 36.0 weeks PMA) were imputed informed by prematurity strata and multiple birth status. 1 participant had a missing value for the birth weight Z-score and was excluded as this is a co-variate. -->
 
-There was no evidence the adjusted mean growth velocity differed significantly between the control and intervention groups (adjusted mean difference 0.01, 95%CI: -0.10 to 0.12; B-H adjusted p-value = 0.913).
+There was no evidence the adjusted mean growth velocity differed significantly between the control and intervention groups (adjusted mean difference 0.01, 95%CI: -0.11 to 0.11; B-H adjusted p-value = 0.995).
 
 \newpage
 
 # S8: BPD at $\leq$36.0 w PMA (logistic regression model)
 
+Eligible and randomised participants present in the study at 36.0 weeks PMA. Participants with incomplete medical records up to 36.0 weeks PMA due to withdrawal or LTFU without evidence of BPD were excluded from analysis. Participants with incomplete medical records due to death within 36.0 weeks PMA will be included.
+
 ```{r data_S8 table, echo=FALSE, message = FALSE, warning = FALSE}
-# Updated for gtsummary v2.0+ 
-data_S8_tab <- data_elig %>%
-  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1)  %>% #698 - of the 53 withdrawals, 9 had BPD
+
+bpd_prepared <- data_elig %>%
+  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>% 
+  mutate(
+    rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
+    
+    # Map numeric values (1 and 2) to your required strings
+    ga_strata.f = case_when(
+      ga_strata.f == "0" ~ "<28 weeks",
+      ga_strata.f == "1" ~ "28-32 weeks",
+      TRUE ~ as.character(ga_strata.f)
+    ),
+    ga_strata.f = factor(ga_strata.f, levels = c("<28 weeks", "28-32 weeks"))
+  )
+
+# 2. Create the stratified table (<28 weeks and 28-32 weeks)
+tab_bpd_strata <- bpd_prepared %>%
   tbl_strata(
     strata = ga_strata.f,
     .tbl_fun = \(x) tbl_summary(
@@ -599,12 +732,30 @@ data_S8_tab <- data_elig %>%
       include = BPD_any,
       by = rand_gp,
       percent = "column",
-      # {n} = numerator, {N} = denominator, {p} = percentage
       statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
       label = list(BPD_any ~ "BPD (Any)")
     ) 
   )
 
+# 3. Create the overall table
+tab_bpd_overall <- bpd_prepared %>%
+  tbl_summary(
+    include = BPD_any,
+    by = rand_gp,
+    percent = "column",
+    statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
+    label = list(BPD_any ~ "BPD (Any)")
+  ) %>%
+  modify_spanning_header(all_stat_cols() ~ "**Overall**")
+
+# 4. Merge side-by-side and add the Table Title
+data_S8_tab <- tbl_merge(
+  tbls = list(tab_bpd_strata, tab_bpd_overall),
+  tab_spanner = FALSE 
+) %>%
+  modify_caption("**Table 3: Bronchopulmonary Dysplasia (BPD) by Prematurity Strata and Treatment Group**")
+
+# 5. Print the table
 data_S8_tab
 ```
 
@@ -612,7 +763,7 @@ data_S8_tab
 ```{r Estimand_S8, echo=FALSE, message = FALSE, warning = FALSE}
 
 data_S8 <- data_elig %>%
-  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>%  #700 #698
+  filter(wk36_present == 1 | death_36wpma == 1 | BPD_any == 1) %>%  #698 #3 missing
   dplyr::select(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(BPD_any, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   add_rcs_splines(x_var = Birth_weight_Z, probs = c(0.1, 0.4, 0.6, 0.9))
@@ -716,7 +867,7 @@ print(results_8_SA1)
 
 #don't adjust p-value
 ```
-This sensitivity analysis was performed replacing the 36 missing BPD status with values indicating that BPD did not occur in these participants. There was insufficient evidence to detect a difference in the risk of BPD between the control and intervention groups (marginal adjusted risk ratio 0.88, 95% CI: 0.74 to 1,06; p-value = 0.174)
+This sensitivity analysis was performed replacing the 3 missing BPD status with values indicating that BPD did not occur in these participants. There was insufficient evidence to detect a difference in the risk of BPD between the control and intervention groups (marginal adjusted risk ratio 0.88, 95% CI: 0.74 to 1,06; p-value = 0.174)
 
 ## Sensitivity analysis for S8 b) replace all missing BPD status with occurred by 36.0 weeks PMA
 
@@ -770,39 +921,48 @@ print(results_8_SA2)
 
 #don't adjust p-value
 ```
-This sensitivity analysis was performed replacing the 36 missing BPD status with values indicating that BPD did  occur by 36.0 weeks PMA in these participants. There was insufficient evidence to detect a difference in the risk of BPD between the control and intervention groups (marginal adjusted risk ratio 0.91, 95% CI: 0.76 to 1.08; p-value = 0.174)
+This sensitivity analysis was performed replacing the 3 missing BPD status with values indicating that BPD did  occur by 36.0 weeks PMA in these participants. There was insufficient evidence to detect a difference in the risk of BPD between the control and intervention groups (marginal adjusted risk ratio 0.91, 95% CI: 0.76 to 1.08; p-value = 0.174)
 
 \newpage
 
 # S14 Necrotising enterocolitis (NEC) Stage II or greater prior to discharge home or 44.0 weeks PMA, whichever occurs sooner
 
+Eligible and randomised participants know to survive to 44.0 weeks PMA. Participants who have withdrawn and LTFU prior to discharge from hospital were excluded from analysis, unless there is evidence of NEC Stage II or greater. Participants with incomplete medical records due to death within 44.0 weeks PMA are included.
+
 ```{r  nec_2 table, echo=FALSE, message = FALSE, warning = FALSE}
 
-###nec_2 
+data_prep <- data_elig %>%
+  filter(wk44_present == 1 | death_44wpma == 1 | nec_2 == 1) %>% 
+  mutate(
+    rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
+    nec_2.f = factor(nec_2, levels = c("0", "1"), labels = c("No", "Yes"))
+  )
 
-data_S14_table <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | nec_2 == 1) %>% #688
-  mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
-         nec_2.f = as.factor(nec_2),
-         nec_2.f = fct_recode(nec_2.f,
-                             "0"  = "No",
-                             "1"  = "Yes")) %>%
- tbl_strata(
-    strata = ga_strata,
-    .tbl_fun = \(x) tbl_summary(
-      x,
+make_summary <- function(df) {
+  df %>%
+    tbl_summary(
       include = nec_2.f,
       by = rand_gp,
       percent = "column",
-      # {n} = numerator, {N} = denominator, {p} = percentage
       statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
       label = list(nec_2.f ~ "NEC >Stage 2")
     )
-    
- )
-# 3. Print the table
-data_S14_table
+}
 
+table_s1      <- data_prep %>% filter(ga_strata == "1") %>% make_summary()
+table_s2      <- data_prep %>% filter(ga_strata == "2") %>% make_summary()
+table_overall <- data_prep %>% make_summary()
+
+# 4. Merge them side-by-side with distinct headers
+data_S14_table <- tbl_merge(
+  tbls = list(table_s1, table_s2, table_overall),
+  tab_spanner = c("**<28 weeks**", "**28-<32 weeks**", "**Overall**")
+) %>%
+  modify_caption("**Table 14: NEC >Stage 2 by Prematurity Strata and Treatment Group**")
+
+
+# 5. Print the table
+data_S14_table
 ```
 
 
@@ -811,8 +971,7 @@ data_S14_table
 #prior to initial discharge home or 44 w PMA, whichever occurs sooner.****
 ##does not require the 44wk filter
 
-data_S14 <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | nec_2 == 1) %>% #688 #554
+data_S14 <- data_elig %>% #554
   dplyr::select(nec_2,study_id,rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex,recr_hosp.factor) %>%
   #dplyr::select(where(~ any(is.na(.))))
@@ -862,7 +1021,7 @@ print(results_14)
 ```
 <!-- The data for this estimand included the randomised and eligible participants who have been discharged home or known to survive until 44.0 weeks PMA, whichever occurs sooner (N = 744). No participants had data missing for this outcome in this cohort. -->
 
-There was a  difference in risk of NEC Stage II or greater between the intervention and control groups (marginal adjusted risk ratio 0.38, 95%CI: 0.16 to 0.90, p-value = 0.029).
+There was a difference in risk of NEC Stage II or greater between the intervention and control groups (marginal adjusted risk ratio 0.30, 95%CI: 0.12 to 0.73, p-value = 0.008).
 
 \newpage
 
@@ -885,13 +1044,60 @@ data_S15_tab <- data_elig %>%
       percent = "column",
       # {n} = numerator, {N} = denominator, {p} = percentage
       statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
-      label = list(ROP_2plus.f ~ "ROP >Grade 2")
+      label = list(ROP_2plus.f ~ "ROP >Stage II + and >Stage III")
     )
     
  )
 # 3. Print the table
 data_S15_tab
 
+data_elig_prep <- data_elig %>%
+  filter(wk44_present == 1 | death_44wpma == 1 | ROP_2plus == 1) %>%
+  mutate(
+    rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
+    ROP_2plus.f = as.factor(ROP_2plus)
+  )
+
+# 2. Create the Stratified Table (Strata 1 & Strata 2)
+# We update the spanning headers dynamically to clean up the default formatting
+tab_strata <- data_elig_prep %>%
+  tbl_strata(
+    strata = ga_strata.f,
+    .tbl_fun = \(x) tbl_summary(
+      x,
+      include = ROP_2plus.f,
+      by = rand_gp,
+      percent = "column",
+      statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
+      label = list(ROP_2plus.f ~ "ROP >Grade 2")
+    )
+  )
+
+# 3. Create the Overall Table (Combined Strata)
+tab_overall <- data_elig_prep %>%
+  tbl_summary(
+    include = ROP_2plus.f,
+    by = rand_gp,
+    percent = "column",
+    statistic = list(all_categorical() ~ "{n}/{N} ({p}%)"), 
+    label = list(ROP_2plus.f ~ "ROP >Grade 2")
+  ) %>%
+  modify_spanning_header(all_stat_cols() ~ "**Overall**")
+
+# 4. Merge tables side-by-side and customise headers
+data_S15_tab <- tbl_merge(
+    tbls = list(tab_strata, tab_overall),
+    tab_spanner = FALSE
+  ) %>%
+  modify_spanning_header(
+    c(stat_1_1_1, stat_2_1_1) ~ "**<28 weeks**",
+    c(stat_1_2_1, stat_2_2_1) ~ "**28-<32 weeks**",
+    c(stat_1_2, stat_2_2)     ~ "**Overall**"
+  ) %>%
+  modify_caption("**Table 15. Retinopathy of Prematurity (ROP) Stage III or greater, or Stage II with plus disease by Prematurity Strata and Treatment Groups**") # 
+
+
+print(data_S15_tab)
 ```
 
 ```{r Estimand_S15, echo=FALSE, message = FALSE, warning = FALSE}
@@ -899,7 +1105,7 @@ data_S15_tab
 
 
 data_S15 <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | ROP_2plus == 1) %>% #688 #561
+  filter(wk44_present == 1 | death_44wpma == 1 | ROP_2plus == 1) %>%  #561
   dplyr::select(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex, recr_hosp.factor) %>%
   tidyr::drop_na(ROP_2plus, rand_gp, ga_strata.f, multiple, ans.factor, Birth_weight_Z, sex) %>%
   #dplyr::select(where(~ any(is.na(.)))) %>% dth_yn has 2 NA values
@@ -952,10 +1158,16 @@ There was insufficient evidence to conclude a difference in risk of ROP Stage II
 ```{r  S-18 table, echo=FALSE, message = FALSE, warning = FALSE}
 ###
 
-data_S18_tab <- data_elig %>%
-  filter(wk44_present == 1 | death_44wpma == 1 | sepsis_proven_yn == 1) %>% #569
-  mutate(rand_gp = factor(rand_gp, levels = c("0","1"), labels = c("Control","Intervention")),
-         sepsis_count.f = as.factor(sepsis_count)) %>%
+data_prepared <- data_elig %>%
+  filter(wk44_present == 1 | death_44wpma == 1 | sepsis_proven_yn == 1) %>% 
+  mutate(
+    rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
+    sepsis_count.f = as.factor(sepsis_count)
+  )
+
+# 2. Create the stratified table (Strata 1 & Strata 2)
+# Using `all_stat_cols() ~ "**{level}**<br>N = {n}"` here forces the true cell group sample sizes.
+tab_strata <- data_prepared %>%
   tbl_strata(
     strata = ga_strata.f,
     .tbl_fun = \(x) tbl_summary(
@@ -963,17 +1175,49 @@ data_S18_tab <- data_elig %>%
       include = c(sepsis_count.f, sepsis_count),
       by = rand_gp,
       percent = "column",
-      # {n} = numerator, {N} = denominator, {p} = percentage
-      statistic = list(all_categorical() ~ "{n}/{N} ({p}%)",
-                       all_continuous()  ~ "{median} ({p25}, {p75})" , 
-      label = list(sepsis_count.f ~ "No. of episodes",
-                   sepsis_count ~ "Overall"))
-    )
+      statistic = list(
+        all_categorical() ~ "{n}/{N} ({p}%)",
+        all_continuous()  ~ "{median} ({p25}, {p75})"
+      ),
+      label = list(
+        sepsis_count.f ~ "No. of episodes",
+        sepsis_count ~ "Overall"
+      )
+    ) %>% 
+      modify_header(all_stat_cols() ~ "**{level}**<br>N = {n}") 
   )
 
-    
-    data_S18_tab
+# 3. Create the Overall table (with matching N assignment logic)
+tab_overall <- data_prepared %>%
+  tbl_summary(
+    include = c(sepsis_count.f, sepsis_count),
+    by = rand_gp,
+    percent = "column",
+    statistic = list(
+      all_categorical() ~ "{n}/{N} ({p}%)",
+      all_continuous()  ~ "{median} ({p25}, {p75})"
+    ),
+    label = list(
+      sepsis_count.f ~ "No. of episodes",
+      sepsis_count ~ "Overall"
+    )
+  ) %>% 
+  modify_header(all_stat_cols() ~ "**{level}**<br>N = {n}")
 
+# 4. Merge and assign explicit spanning headers
+# Since the bottom headers are already dynamically baked in, we only handle the macro blocks here.
+data_S18_tab <- tbl_merge(
+  tbls = list(tab_strata, tab_overall) 
+) %>%
+  modify_spanning_header(
+    c(stat_1_1_1, stat_2_1_1) ~ "**Strata 1**",
+    c(stat_1_2_1, stat_2_2_1) ~ "**Strata 2**",
+    c(stat_1_2, stat_2_2)     ~ "**Overall**"
+  ) %>%
+  modify_caption("**Table 1. Patient Characteristics Stratified by Group and Overall Cohort**")
+
+# View the final table
+data_S18_tab
 ```
 
 
@@ -1057,7 +1301,7 @@ print(results_18)
 ```
 <!-- This estimand included the participants who were known to be alive at 44.0 wk PMA (n = 530). There was 1 participant with missing data for this outcome and were excluded leaving 529 participants available for analysis. -->
 
-There was insufficient evidence to conclude a significant difference in the adjusted rate of number of sepsis episodes between the intervention and control groups (marginal adjusted rate ratio 0.87, 95% CI: 0.45 to 1.69, p-value = 0.685.
+There was insufficient evidence to conclude a significant difference in the adjusted rate of number of sepsis episodes between the intervention and control groups (marginal adjusted rate ratio 0.94, 95% CI: 0.44 to 2.03, p-value = 0.877.
 
 <!-- ##PLATIPUS scores -->
 
