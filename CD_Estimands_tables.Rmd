@@ -75,19 +75,29 @@ data <- data_raw %>%
                              is.na(BPD) & withdraw_36wpma == 1 ~ NA,
                              is.na(BPD) ~ NA), 
          nec_2 = case_when(necstage %in% c("2","3") ~ "1",
-                           necstage == "1" ~ "0", necstage == "" ~ "0", 
-                           necstage == "NI" ~ "0", is.na(necstage) ~ "0",
+                           necstage == "1" ~ "0",
+                           necstage == "" ~ "0", #absence of examination implies absence of condition
+                           necstage == "NI" ~ "0", #absence of examination implies absence of condition
                            is.na(necstage) & death_44wpma == 1 ~ "0",
                            is.na(necstage) & withdraw_44wpma == 1 ~ NA,
-                           is.na(necstage) & withdraw_dcg == 1 ~ NA, #wd before dg from hosp
-                          .default = "0"),
+                           is.na(necstage) & necdx == "0" ~ "0",
+                           is.na(necdx) & is.na(necstage) ~ NA,
+                          .default = NA),
          nec_2 = as.numeric(nec_2),
          ROP_2plus = case_when(rop %in% c("3","4") ~ 1,
                                rop == "2" & rop_plus_yn == 1 ~ 1,
+                               rop %in% c("0", "1","2", "5", "NI", "UNK", "") ~ 0, 
                                is.na(rop) & death_44wpma == 1 ~ 0,
-                               is.na(rop) & withdraw_dcg ~ NA,
-                              .default = 0),
-         ROP_2plus = as.numeric(ROP_2plus),
+                               is.na(rop) & withdraw_44wpma == 1 ~ NA, 
+                              .default = NA),
+         ROP_2plus = as.numeric(ROP_2plus), 
+         ROP_2plus_notime = case_when(rop %in% c("3","4") ~ 1,
+                               rop == "2" & rop_plus_yn == 1 ~ 1,
+                               rop %in% c("0", "1","2", "5", "NI", "UNK", "") ~ 0, 
+                               is.na(rop) & dth_yn == 1 ~ 0,
+                               is.na(rop) & withdraw_yn == 1 ~ 0, 
+                              .default = NA),
+         ROP_2plus_notime = as.numeric(ROP_2plus_notime), 
          sepsis_count = case_when(death_44wpma != 1 & !is.na(sepsis_proven_no) ~ sepsis_proven_no,
                                   death_44wpma == 1 & is.na(sepsis_proven_no) ~ 0,
                                   withdraw_44wpma == 1 ~ NA,
@@ -581,14 +591,14 @@ data_elig_20 <- data_elig %>%
     rand_gp = factor(rand_gp, levels = c("0", "1"), labels = c("Control", "Intervention")),
     
     # Keep 0 and 1 as factor levels so gtsummary recognizes them as dichotomous
-    ROP_2plus = factor(ROP_2plus, levels = c(0, 1)),
+    ROP_2plus_notime = factor(ROP_2plus_notime, levels = c(0, 1)),
     ae_yn.factor = factor(ae_yn, levels = c("0", "1")),
     skin_damage = case_when(is.na(ae_yn.factor) ~ "0", TRUE ~ ae_yn.factor),
     skin_damage = factor(skin_damage, levels = c("0", "1"))
   )
 
 ae.data <- data_elig_20 %>%
-  dplyr::select(ga_strata, rand_gp, ROP_2plus, skin_damage) %>%
+  dplyr::select(ga_strata, rand_gp, ROP_2plus_notime, skin_damage) %>%
   mutate(
     strata1 = case_when(
       ga_strata == "1" ~ "<28 weeks",
@@ -612,7 +622,7 @@ my_tbl_fun <- function(x) {
       digits = all_continuous() ~ 0,
       missing = "ifany",
       label = list(
-        ROP_2plus = "ROP - Stage III or greater or Stage II plus disease",
+        ROP_2plus_notime = "ROP - Stage III or greater or Stage II plus disease",
         skin_damage = "Skin damage from wearables"
       )
     )
