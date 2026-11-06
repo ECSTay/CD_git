@@ -159,25 +159,25 @@ data_10_sib <- data_sib %>%
 
 ```{r Estimand_S10_rand, echo=FALSE, message = FALSE, warning = FALSE}
 ## the right shift of the SpO2/PiO2 curve at 36.0 w PMA.****
-#Participants and allocated siblings from multiple births
 
 base_data <- data_10_elig |>
   dplyr::select(ga_strata, rand_gp, Shift..kPa.) |>
+  dplyr::filter(ga_strata %in% c("1", "2")) |> 
   mutate(strata = case_when(
     ga_strata == "1" ~ "<28 weeks",
-    ga_strata == "2" ~ "28 to <32 weeks",
-    .default = "Unknown strata"
+    ga_strata == "2" ~ "28 to <32 weeks"
   )) |>
-  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))
+  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks")))
 
 # 2. Build the stratified table using tbl_strata
 table_stratified <- base_data |>
+  dplyr::select(strata, rand_gp, Shift..kPa.) |> 
   tbl_strata(
     strata = strata,
     .tbl_fun =
       ~ .x |>
       tbl_summary(by = rand_gp,
-                  statistic = all_continuous() ~ "{median} ({p25},{p75})",
+                  statistic = all_continuous() ~ "{median} ({p25}, {p75})",
                   digits = all_continuous() ~ 2,
                   label = list(Shift..kPa. = "Right shift (kPa)"),
                   missing_text = "(Missing)") |>
@@ -186,24 +186,29 @@ table_stratified <- base_data |>
 
 # 3. Build the unstratified (Combined) table
 table_combined <- base_data |>
+  dplyr::select(rand_gp, Shift..kPa.) |> 
   tbl_summary(
     by = rand_gp,
-    statistic = all_continuous() ~ "{median} ({p25},{p75})",
+    statistic = all_continuous() ~ "{median} ({p25}, {p75})",
     digits = all_continuous() ~ 2,
     label = list(Shift..kPa. = "Right shift (kPa)"),
     missing_text = "(Missing)"
   ) |>
   modify_header(all_stat_cols() ~ "**{level}**, N = {n}")
 
-# 4. Merge them together and label the spans
+# 4. Merge and apply the exact column structural selectors
 final_table_shift <- tbl_merge(
   tbls = list(table_stratified, table_combined),
-  tab_spanner = c(FALSE, "**Combined Strata**") # FALSE keeps original strata spans untouched
-)
+  tab_spanner = FALSE 
+) |> 
+  modify_spanning_header(
+    c(stat_1_1_1, stat_2_1_1) ~ "**<28 weeks**",
+    c(stat_1_2_1, stat_2_2_1) ~ "**28 to <32 weeks**",
+    c(stat_1_2, stat_2_2)     ~ "**Combined Strata**"
+  )
 
-# Print the final table
+# Preview the final table
 final_table_shift
-
 
 ## Unadjusted median (with 25th and 75th percentiles) for intervention and control groups by randomisation status and prematurity strata - table
 ```
@@ -214,24 +219,24 @@ final_table_shift
 ## the right shift of the SpO2/PiO2 curve at 36.0 w PMA.****
 #Participants and allocated siblings from multiple births
 
-
-base_data_sib <- data_10_sib |>
+base_data <- data_10_sib |>
   dplyr::select(ga_strata, nonrand_gp, Shift..kPa.) |>
+  dplyr::filter(ga_strata %in% c("1", "2")) |> 
   mutate(strata = case_when(
     ga_strata == "1" ~ "<28 weeks",
-    ga_strata == "2" ~ "28 to <32 weeks",
-    .default = "Unknown strata"
+    ga_strata == "2" ~ "28 to <32 weeks"
   )) |>
-  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks", "Unknown strata")))
+  mutate(strata = factor(strata, levels = c("<28 weeks", "28 to <32 weeks")))
 
 # 2. Build the stratified table using tbl_strata
-table_stratified_sib <- base_data_sib |>
+table_stratified_sib <- base_data |>
+  dplyr::select(strata, nonrand_gp, Shift..kPa.) |> 
   tbl_strata(
     strata = strata,
     .tbl_fun =
       ~ .x |>
       tbl_summary(by = nonrand_gp,
-                  statistic = all_continuous() ~ "{median} ({p25},{p75})",
+                  statistic = all_continuous() ~ "{median} ({p25}, {p75})",
                   digits = all_continuous() ~ 2,
                   label = list(Shift..kPa. = "Right shift (kPa)"),
                   missing_text = "(Missing)") |>
@@ -239,29 +244,33 @@ table_stratified_sib <- base_data_sib |>
   )
 
 # 3. Build the unstratified (Combined) table
-table_combined_sib <- base_data_sib |>
+table_combined_sib <- base_data |>
+  dplyr::select(nonrand_gp, Shift..kPa.) |> 
   tbl_summary(
     by = nonrand_gp,
-    statistic = all_continuous() ~ "{median} ({p25},{p75})",
+    statistic = all_continuous() ~ "{median} ({p25}, {p75})",
     digits = all_continuous() ~ 2,
     label = list(Shift..kPa. = "Right shift (kPa)"),
     missing_text = "(Missing)"
   ) |>
   modify_header(all_stat_cols() ~ "**{level}**, N = {n}")
 
-# 4. Merge them together and label the spans
+# 4. Merge and apply the exact column structural selectors
 final_table_shift_sib <- tbl_merge(
   tbls = list(table_stratified_sib, table_combined_sib),
-  tab_spanner = c(FALSE, "**Combined Strata**") # FALSE keeps original strata spans untouched
-)
+  tab_spanner = FALSE 
+) |> 
+  modify_spanning_header(
+    c(stat_1_1_1, stat_2_1_1) ~ "**<28 weeks**",
+    c(stat_1_2_1, stat_2_2_1) ~ "**28 to <32 weeks**",
+    c(stat_1_2, stat_2_2)     ~ "**Combined Strata**"
+  )
 
-# Print the final table
+# Preview the final table
 final_table_shift_sib
-
 ## Unadjusted median (with 25th and 75th percentiles) for intervention and control groups by randomisation status and prematurity strata - table
 ```
 
-\newpage
 
 \newpage
 #SAFETY OUTCOMES
@@ -359,8 +368,8 @@ master_table
 data_elig_AE_sibs <- data_sib %>%
   mutate(nonrand_gp = factor(nonrand_gp, levels = c ("0","1"), labels = c("Control", "Intervention")),
          PVL = factor(PVL, c("0","1")),
-         BPD = factor(data_elig$BPD, levels = c("0","1","2","3")),
-         IVH = factor(data_elig$IVH, levels = c("0","1","2","3","4")))
+         BPD = factor(data_sib$BPD, levels = c("0","1","2","3")),
+         IVH = factor(data_sib$IVH, levels = c("0","1","2","3","4")))
 
 
 data_prep <- data_elig_AE_sibs |> 
@@ -401,14 +410,14 @@ table_list <- map(outcomes, function(var) {
   t_combined_sibs <- data_prep |>
     dplyr::select(nonrand_gp, all_of(var)) |>
     tbl_summary(
-      by = rand_gp, 
+      by = nonrand_gp, 
       statistic = all_categorical() ~ "{n} / {N} ({p}%)", 
       label = lbl_list,                      
       missing_text = "(Missing)"
     )
   
   # C. Merge side-by-side using exact column matching
-  tbl_merge_sibs(
+  tbl_merge(
     tbls = list(t_strata_sibs, t_combined_sibs)
   ) |> 
     # Directly overwrite headers dynamically without breaking internal naming rules
@@ -510,8 +519,6 @@ ae1.strata.elig.prior
 \newpage
 
 
-\newpage
-
 <!-- ```{r Estimand_S19_rand, echo=FALSE, message = FALSE, warning = FALSE} -->
 <!-- ##  risk for cerebral palsy (CP) on General Movements Assessment (GMA) at 36.0 w PMA. -->
 <!-- #Randomised trial eligble participamts -->
@@ -543,7 +550,6 @@ ae1.strata.elig.prior
 <!-- ``` -->
 
 
-\newpage
 #ESTIMAND 20 - study related adverse events
 
 ```{r Estimand_S20, echo=FALSE, message = FALSE, warning = FALSE, results = 'asis'}
@@ -555,7 +561,7 @@ ae1.strata.elig.prior
 #any perceived safety issue associated with the intervention devices, up to date of death, discharge
 #home from hospital, or 44.0 w PMA, whichever occurs first for each participant
 
-#Randomised trial eligible participants up to date of death, discharge home from hospital, or 44.0 w PMA, whichever occurs first ie ALL of them in data_elig (N = 744)
+#Randomised trial eligible participants up to date of death, discharge home from hospital, or 44.0 w PMA, whichever occurs first ie ALL of them in data_elig (N = 743)
 
 ##  Frequencies (%) for intervention and control groups by strata
 
